@@ -1,0 +1,9 @@
+[package]
+name = "bbo"
+version = "0.0.1"
+authors = ["Takeru Ohta <phjgt308@gmail.com>"]
+edition = "2018"
+publish = false
+
+[dependencies]
+rand = "0.6"
