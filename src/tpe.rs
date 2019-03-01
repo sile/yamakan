@@ -40,102 +40,191 @@ impl Weights for DefaultWeights {
 }
 
 #[derive(Debug)]
+pub struct Entry {
+    pub mu: f64,
+    pub weight: f64,
+    pub sigma: f64,
+}
+impl Entry {
+    fn new(mu: f64, weight: f64) -> Self {
+        Entry {
+            mu,
+            weight,
+            sigma: 0.0,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct ParzenEstimator<W> {
     params: ParzenEstimatorParameters<W>,
+    entries: Vec<Entry>,
 }
 impl<W: Weights> ParzenEstimator<W> {
     pub fn new(params: ParzenEstimatorParameters<W>) -> Self {
-        Self { params }
+        Self {
+            params,
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn mus<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
+        self.entries.iter().map(|x| x.mu)
+    }
+
+    pub fn weights<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
+        self.entries.iter().map(|x| x.weight)
+    }
+
+    pub fn sigmas<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
+        self.entries.iter().map(|x| x.sigma)
     }
 }
 impl<W: Weights> ParzenEstimator<W> {
-    pub fn estimate(&self, mus: &[f64], low: f64, high: f64) -> Estimated {
+    fn insert_entry(entries: &mut Vec<Entry>, mu: f64, weight: f64) -> usize {
+        let pos = entries
+            .binary_search_by(|x| {
+                NonNanF64::new(x.mu)
+                    .cmp(&NonNanF64::new(mu))
+                    .then(cmp::Ordering::Greater)
+            })
+            .unwrap_or_else(|i| i);
+        entries.insert(pos, Entry::new(mu, weight));
+        pos
+    }
+
+    pub fn estimate(&mut self, mus: &[f64], low: f64, high: f64) {
         let weights = self.params.weights.weights(mus.len());
-        let mut weighted_mus = mus
+        let mut entries = mus
             .iter()
-            .cloned()
             .zip(weights.into_iter())
-            .map(|(mu, weight)| WeightedMu { mu, weight })
+            .map(|(&mu, weight)| Entry::new(mu, weight))
             .collect::<Vec<_>>();
-        weighted_mus.sort_by_key(|x| NonNanF64::new(x.mu));
+        entries.sort_by_key(|x| NonNanF64::new(x.mu));
 
-        let mut prior_pos = None;
-        if self.params.consider_prior {
+        let prior_pos = if self.params.consider_prior {
             let prior_mu = 0.5 * (low + high);
-            if mus.is_empty() {
-                weighted_mus.push(WeightedMu {
-                    mu: prior_mu,
-                    weight: self.params.prior_weight,
-                });
-            } else {
-                // We decide the place of the  prior.
-                let pos = weighted_mus
-                    .binary_search_by(|x| {
-                        if NonNanF64::new(prior_mu) == NonNanF64::new(x.mu) {
-                            ::std::cmp::Ordering::Greater
-                        } else {
-                            NonNanF64::new(x.mu).cmp(&NonNanF64::new(prior_mu))
-                        }
-                    })
-                    .unwrap_or_else(|i| i);
-                weighted_mus.insert(
-                    pos,
-                    WeightedMu {
-                        mu: prior_mu,
-                        weight: self.params.prior_weight,
-                    },
-                );
-                prior_pos = Some(pos);
-            }
-        }
+            let pos = Self::insert_entry(&mut entries, prior_mu, self.params.prior_weight);
+            Some(pos)
+        } else {
+            None
+        };
 
-        let weight_sum = weighted_mus.iter().map(|x| x.weight).sum::<f64>();
-        for x in &mut weighted_mus {
+        let weight_sum = entries.iter().map(|x| x.weight).sum::<f64>();
+        for x in &mut entries {
             x.weight /= weight_sum;
         }
 
-        let mut sigma: Vec<f64> = Vec::new();
-        if !mus.is_empty() {
-            use std::iter::once;
-
-            for ((prev, curr), succ) in once(low)
-                .chain(weighted_mus.iter().map(|x| x.mu))
-                .zip(weighted_mus.iter().map(|x| x.mu))
-                .zip(weighted_mus.iter().map(|x| x.mu).skip(1).chain(once(high)))
-            {
-                sigma.push(float::max(curr - prev, succ - curr));
+        for i in 0..entries.len() {
+            let prev = if i == 0 { low } else { entries[i - 1].mu };
+            let curr = entries[i].mu;
+            let succ = entries.get(i + 1).map_or(high, |x| x.mu);
+            entries[i].sigma = float::max(curr - prev, succ - curr);
+        }
+        if !self.params.consider_endpoints {
+            let n = entries.len();
+            if n >= 2 {
+                entries[0].sigma = entries[1].sigma - entries[0].sigma;
+                entries[n - 1].sigma -= entries[n - 2].sigma;
             }
-            let n = sigma.len();
-            if !self.params.consider_endpoints {
-                sigma[0] = sigma[1] - sigma[0];
-                sigma[n - 1] = sigma[n - 1] - sigma[n - 2];
-            }
-        } else if self.params.consider_prior {
-            let prior_sigma = 1.0 * (high - low);
-            sigma.push(prior_sigma);
+        }
+        if let Some(pos) = prior_pos {
+            let prior_sigma = high - low;
+            entries[pos].sigma = prior_sigma;
         }
 
         // Adjust the range of the `sigma` according to the `consider_magic_clip` flag.
-        let maxsigma = 1.0 * (high - low);
-        let minsigma;
-        if self.params.consider_magic_clip {
-            minsigma = 1.0 * (high - low) / float::min(100.0, 1.0 + (weighted_mus.len() as f64));
+        let maxsigma = high - low;
+        let minsigma = if self.params.consider_magic_clip {
+            (high - low) / float::min(100.0, 1.0 + (entries.len() as f64))
         } else {
-            minsigma = 0.0;
-        }
-        for s in &mut sigma {
-            *s = float::clip(minsigma, *s, maxsigma);
-        }
-        if let Some(pos) = prior_pos {
-            let prior_sigma = 1.0 * (high - low);
-            sigma[pos] = prior_sigma;
+            0.0
+        };
+        for x in &mut entries {
+            x.sigma = float::clip(minsigma, x.sigma, maxsigma);
         }
 
-        Estimated {
-            mus: weighted_mus,
-            sigmas: sigma,
-        }
+        self.entries = entries;
     }
+
+    // pub fn estimate(&self, mus: &[f64], low: f64, high: f64) -> Estimated {
+    //     let weights = self.params.weights.weights(mus.len());
+    //     let mut weighted_mus = mus
+    //         .iter()
+    //         .cloned()
+    //         .zip(weights.into_iter())
+    //         .map(|(mu, weight)| WeightedMu { mu, weight })
+    //         .collect::<Vec<_>>();
+    //     weighted_mus.sort_by_key(|x| NonNanF64::new(x.mu));
+
+    //     let mut prior_pos = None;
+    //     if self.params.consider_prior {
+    //         let prior_mu = 0.5 * (low + high);
+
+    //         // We decide the place of the  prior.
+    //         let pos = weighted_mus
+    //             .binary_search_by(|x| {
+    //                 NonNanF64::new(x.mu)
+    //                     .cmp(&NonNanF64::new(prior_mu))
+    //                     .then(cmp::Ordering::Greater)
+    //             })
+    //             .unwrap_or_else(|i| i);
+    //         weighted_mus.insert(
+    //             pos,
+    //             WeightedMu {
+    //                 mu: prior_mu,
+    //                 weight: self.params.prior_weight,
+    //             },
+    //         );
+    //         prior_pos = Some(pos);
+    //     }
+
+    //     let weight_sum = weighted_mus.iter().map(|x| x.weight).sum::<f64>();
+    //     for x in &mut weighted_mus {
+    //         x.weight /= weight_sum;
+    //     }
+
+    //     let mut sigma: Vec<f64> = Vec::new();
+    //     if !mus.is_empty() {
+    //         use std::iter::once;
+
+    //         for ((prev, curr), succ) in once(low)
+    //             .chain(weighted_mus.iter().map(|x| x.mu))
+    //             .zip(weighted_mus.iter().map(|x| x.mu))
+    //             .zip(weighted_mus.iter().map(|x| x.mu).skip(1).chain(once(high)))
+    //         {
+    //             sigma.push(float::max(curr - prev, succ - curr));
+    //         }
+    //         let n = sigma.len();
+    //         if !self.params.consider_endpoints {
+    //             sigma[0] = sigma[1] - sigma[0];
+    //             sigma[n - 1] = sigma[n - 1] - sigma[n - 2];
+    //         }
+    //         if let Some(pos) = prior_pos {
+    //             let prior_sigma = high - low;
+    //             sigma[pos] = prior_sigma;
+    //         }
+    //     } else if self.params.consider_prior {
+    //         let prior_sigma = high - low;
+    //         sigma.push(prior_sigma);
+    //     }
+
+    //     // Adjust the range of the `sigma` according to the `consider_magic_clip` flag.
+    //     let maxsigma = high - low;
+    //     let minsigma = if self.params.consider_magic_clip {
+    //         (high - low) / float::min(100.0, 1.0 + (weighted_mus.len() as f64))
+    //     } else {
+    //         0.0
+    //     };
+    //     for s in &mut sigma {
+    //         *s = float::clip(minsigma, *s, maxsigma);
+    //     }
+
+    //     Estimated {
+    //         mus: weighted_mus,
+    //         sigmas: sigma,
+    //     }
+    // }
 }
 
 #[derive(Debug, PartialEq)]
@@ -157,50 +246,51 @@ mod tests {
     #[test]
     fn it_works0() {
         let params = ParzenEstimatorParameters::default();
-        let estimator = ParzenEstimator::new(params);
-        let result = estimator.estimate(&[], 0.0, 1.0);
+        let mut est = ParzenEstimator::new(params);
+        est.estimate(&[], 0.0, 1.0);
 
-        assert_eq!(result.sigmas, [1.0]);
-        assert_eq!(result.mus, [m(0.5, 1.0)]);
+        assert_eq!(est.sigmas().collect::<Vec<_>>(), [1.0]);
+        assert_eq!(est.mus().collect::<Vec<_>>(), [0.5]);
+        assert_eq!(est.weights().collect::<Vec<_>>(), [1.0]);
     }
 
     #[test]
     fn it_works1() {
         let params = ParzenEstimatorParameters::default();
-        let estimator = ParzenEstimator::new(params);
-        let result = estimator.estimate(&[2.4, 3.3], 0.0, 1.0);
+        let mut est = ParzenEstimator::new(params);
+        est.estimate(&[2.4, 3.3], 0.0, 1.0);
 
-        assert_eq!(result.sigmas, [1.0, 1.0, 0.25]);
+        assert_eq!(est.sigmas().collect::<Vec<_>>(), [1.0, 1.0, 0.25]);
+        assert_eq!(est.mus().collect::<Vec<_>>(), [0.5, 2.4, 3.3]);
         assert_eq!(
-            result.mus,
-            [
-                m(0.5, 0.3333333333333333),
-                m(2.4, 0.3333333333333333),
-                m(3.3, 0.3333333333333333),
-            ]
+            est.weights().collect::<Vec<_>>(),
+            [0.3333333333333333, 0.3333333333333333, 0.3333333333333333]
         );
     }
 
     #[test]
     fn it_works2() {
-        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
-        let x = estimator.estimate(&[3.], 0.5, 3.5);
-        assert_eq!(weights(&x), [0.5, 0.5]);
-        assert_eq!(mus(&x), [2.0, 3.0]);
-        assert_eq!(x.sigmas, [3.0, 1.5]);
+        let mut est = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        est.estimate(&[3.], 0.5, 3.5);
+        assert_eq!(est.weights().collect::<Vec<_>>(), [0.5, 0.5]);
+        assert_eq!(est.mus().collect::<Vec<_>>(), [2.0, 3.0]);
+        assert_eq!(est.sigmas().collect::<Vec<_>>(), [3.0, 1.5]);
     }
     #[test]
     fn it_works3() {
-        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
-        let x = estimator.estimate(&[3., 1., 3., 3., 3., 1., 2., 2., 2.], 0.5, 3.5);
+        let mut est = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        est.estimate(&[3., 1., 3., 3., 3., 1., 2., 2., 2.], 0.5, 3.5);
         assert_eq!(
-            weights(&x),
+            est.weights().collect::<Vec<_>>(),
             [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
         );
-        assert_eq!(mus(&x), [1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0]);
+        assert_eq!(
+            est.mus().collect::<Vec<_>>(),
+            [1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0]
+        );
 
         assert_eq!(
-            x.sigmas,
+            est.sigmas().collect::<Vec<_>>(),
             [
                 0.5,
                 1.0,
@@ -217,16 +307,22 @@ mod tests {
     }
     #[test]
     fn it_works4() {
-        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
-        let x = estimator.estimate(&[1.95032376], 1.3862943611198906, 4.852030263919617);
-        assert_eq!(weights(&x), [0.5, 0.5]);
-        assert_eq!(mus(&x), [1.95032376, 3.119162312519754]);
-        assert_eq!(x.sigmas, [1.155245300933242, 3.465735902799726]);
+        let mut est = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        est.estimate(&[1.95032376], 1.3862943611198906, 4.852030263919617);
+        assert_eq!(est.weights().collect::<Vec<_>>(), [0.5, 0.5]);
+        assert_eq!(
+            est.mus().collect::<Vec<_>>(),
+            [1.95032376, 3.119162312519754]
+        );
+        assert_eq!(
+            est.sigmas().collect::<Vec<_>>(),
+            [1.155245300933242, 3.465735902799726]
+        );
     }
     #[test]
     fn it_works5() {
-        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
-        let x = estimator.estimate(
+        let mut est = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        est.estimate(
             &[
                 1.53647634, 1.60117829, 1.74975032, 3.78253979, 3.75193948, 4.77576884, 1.64391653,
                 4.18670963, 3.40994179,
@@ -235,11 +331,11 @@ mod tests {
             4.852030263919617,
         );
         assert_eq!(
-            weights(&x),
+            est.weights().collect::<Vec<_>>(),
             [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
         );
         assert_eq!(
-            mus(&x),
+            est.mus().collect::<Vec<_>>(),
             [
                 1.53647634,
                 1.60117829,
@@ -254,7 +350,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            x.sigmas,
+            est.sigmas().collect::<Vec<_>>(),
             [
                 0.31506690025452055,
                 0.31506690025452055,
@@ -271,16 +367,22 @@ mod tests {
     }
     #[test]
     fn it_works6() {
-        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
-        let x = estimator.estimate(&[-11.94114835], -23.025850929940457, -6.907755278982137);
-        assert_eq!(weights(&x), [0.5, 0.5]);
-        assert_eq!(mus(&x), [-14.966803104461297, -11.94114835]);
-        assert_eq!(x.sigmas, [16.11809565095832, 8.05904782547916]);
+        let mut est = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        est.estimate(&[-11.94114835], -23.025850929940457, -6.907755278982137);
+        assert_eq!(est.weights().collect::<Vec<_>>(), [0.5, 0.5]);
+        assert_eq!(
+            est.mus().collect::<Vec<_>>(),
+            [-14.966803104461297, -11.94114835]
+        );
+        assert_eq!(
+            est.sigmas().collect::<Vec<_>>(),
+            [16.11809565095832, 8.05904782547916]
+        );
     }
     #[test]
     fn it_works7() {
-        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
-        let x = estimator.estimate(
+        let mut est = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        est.estimate(
             &[
                 -7.26690481,
                 -7.78043504,
@@ -296,11 +398,11 @@ mod tests {
             -6.907755278982137,
         );
         assert_eq!(
-            weights(&x),
+            est.weights().collect::<Vec<_>>(),
             [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
         );
         assert_eq!(
-            mus(&x),
+            est.mus().collect::<Vec<_>>(),
             [
                 -22.90676614,
                 -19.10557622,
@@ -315,7 +417,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            x.sigmas,
+            est.sigmas().collect::<Vec<_>>(),
             [
                 1.4652814228143927,
                 3.801189919999999,
@@ -329,17 +431,5 @@ mod tests {
                 1.4652814228143927
             ]
         );
-    }
-
-    fn m(mu: f64, weight: f64) -> WeightedMu {
-        WeightedMu { mu, weight }
-    }
-
-    fn mus(x: &Estimated) -> Vec<f64> {
-        x.mus.iter().map(|x| x.mu).collect()
-    }
-
-    fn weights(x: &Estimated) -> Vec<f64> {
-        x.mus.iter().map(|x| x.weight).collect()
     }
 }
