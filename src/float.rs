@@ -28,5 +28,5 @@ pub fn min(x: f64, y: f64) -> f64 {
 }
 
 pub fn clip(min_x: f64, x: f64, max_x: f64) -> f64 {
-    max(min(min_x, x), max_x)
+    max(min(max_x, x), min_x)
 }

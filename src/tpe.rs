@@ -59,6 +59,7 @@ impl<W: Weights> ParzenEstimator<W> {
             .collect::<Vec<_>>();
         weighted_mus.sort_by_key(|x| NonNanF64::new(x.mu));
 
+        let mut prior_pos = None;
         if self.params.consider_prior {
             let prior_mu = 0.5 * (low + high);
             if mus.is_empty() {
@@ -68,16 +69,17 @@ impl<W: Weights> ParzenEstimator<W> {
                 });
             } else {
                 // We decide the place of the  prior.
-                let prior_pos = weighted_mus
+                let pos = weighted_mus
                     .binary_search_by_key(&NonNanF64::new(prior_mu), |x| NonNanF64::new(x.mu))
                     .unwrap_or_else(|i| i);
                 weighted_mus.insert(
-                    prior_pos,
+                    pos,
                     WeightedMu {
                         mu: prior_mu,
                         weight: self.params.prior_weight,
                     },
                 );
+                prior_pos = Some(pos);
             }
         }
 
@@ -89,19 +91,19 @@ impl<W: Weights> ParzenEstimator<W> {
         let mut sigma: Vec<f64> = Vec::new();
         if !mus.is_empty() {
             use std::iter::once;
+
             for ((prev, curr), succ) in once(low)
                 .chain(weighted_mus.iter().map(|x| x.mu))
                 .zip(weighted_mus.iter().map(|x| x.mu))
                 .zip(weighted_mus.iter().map(|x| x.mu).skip(1).chain(once(high)))
             {
-                sigma.push(float::max(curr - prev, succ - prev));
+                sigma.push(float::max(curr - prev, succ - curr));
             }
             let n = sigma.len();
             if !self.params.consider_endpoints {
                 sigma[0] = sigma[1] - sigma[0];
-                sigma[n - 2] = sigma[n - 2] - sigma[n - 3];
+                sigma[n - 1] = sigma[n - 1] - sigma[n - 2];
             }
-            sigma.truncate(n - 1);
         } else if self.params.consider_prior {
             let prior_sigma = 1.0 * (high - low);
             sigma.push(prior_sigma);
@@ -117,6 +119,10 @@ impl<W: Weights> ParzenEstimator<W> {
         }
         for s in &mut sigma {
             *s = float::clip(minsigma, *s, maxsigma);
+        }
+        if let Some(pos) = prior_pos {
+            let prior_sigma = 1.0 * (high - low);
+            sigma[pos] = prior_sigma;
         }
 
         Estimated {
