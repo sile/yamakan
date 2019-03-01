@@ -1,4 +1,4 @@
-use crate::float::NonNanF64;
+use crate::float::{self, NonNanF64};
 use crate::iter::linspace;
 use std::cmp;
 
@@ -94,7 +94,7 @@ impl<W: Weights> ParzenEstimator<W> {
                 .zip(weighted_mus.iter().map(|x| x.mu))
                 .zip(weighted_mus.iter().map(|x| x.mu).skip(1).chain(once(high)))
             {
-                sigma.push(fmax(curr - prev, succ - prev));
+                sigma.push(float::max(curr - prev, succ - prev));
             }
             let n = sigma.len();
             if !self.params.consider_endpoints {
@@ -108,23 +108,68 @@ impl<W: Weights> ParzenEstimator<W> {
         }
 
         // Adjust the range of the `sigma` according to the `consider_magic_clip` flag.
-        panic!()
+        let maxsigma = 1.0 * (high - low);
+        let minsigma;
+        if self.params.consider_magic_clip {
+            minsigma = 1.0 * (high - low) / float::min(100.0, 1.0 + (weighted_mus.len() as f64));
+        } else {
+            minsigma = 0.0;
+        }
+        for s in &mut sigma {
+            *s = float::clip(minsigma, *s, maxsigma);
+        }
+
+        Estimated {
+            mus: weighted_mus,
+            sigmas: sigma,
+        }
     }
 }
 
-fn fmax(x: f64, y: f64) -> f64 {
-    cmp::max(NonNanF64::new(x), NonNanF64::new(y)).as_f64()
-}
-
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct WeightedMu {
     pub mu: f64,
     pub weight: f64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Estimated {
-    pub weights: Vec<f64>,
-    pub mus: Vec<f64>,
+    pub mus: Vec<WeightedMu>,
     pub sigmas: Vec<f64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works0() {
+        let params = ParzenEstimatorParameters::default();
+        let estimator = ParzenEstimator::new(params);
+        let result = estimator.estimate(&[], 0.0, 1.0);
+
+        assert_eq!(result.sigmas, [1.0]);
+        assert_eq!(result.mus, [m(0.5, 1.0)]);
+    }
+
+    #[test]
+    fn it_works1() {
+        let params = ParzenEstimatorParameters::default();
+        let estimator = ParzenEstimator::new(params);
+        let result = estimator.estimate(&[2.4, 3.3], 0.0, 1.0);
+
+        assert_eq!(result.sigmas, [1.0, 1.0, 0.25]);
+        assert_eq!(
+            result.mus,
+            [
+                m(0.5, 0.3333333333333333),
+                m(2.4, 0.3333333333333333),
+                m(3.3, 0.3333333333333333),
+            ]
+        );
+    }
+
+    fn m(mu: f64, weight: f64) -> WeightedMu {
+        WeightedMu { mu, weight }
+    }
 }
