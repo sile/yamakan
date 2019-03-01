@@ -70,7 +70,13 @@ impl<W: Weights> ParzenEstimator<W> {
             } else {
                 // We decide the place of the  prior.
                 let pos = weighted_mus
-                    .binary_search_by_key(&NonNanF64::new(prior_mu), |x| NonNanF64::new(x.mu))
+                    .binary_search_by(|x| {
+                        if NonNanF64::new(prior_mu) == NonNanF64::new(x.mu) {
+                            ::std::cmp::Ordering::Greater
+                        } else {
+                            NonNanF64::new(x.mu).cmp(&NonNanF64::new(prior_mu))
+                        }
+                    })
                     .unwrap_or_else(|i| i);
                 weighted_mus.insert(
                     pos,
@@ -175,7 +181,165 @@ mod tests {
         );
     }
 
+    #[test]
+    fn it_works2() {
+        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        let x = estimator.estimate(&[3.], 0.5, 3.5);
+        assert_eq!(weights(&x), [0.5, 0.5]);
+        assert_eq!(mus(&x), [2.0, 3.0]);
+        assert_eq!(x.sigmas, [3.0, 1.5]);
+    }
+    #[test]
+    fn it_works3() {
+        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        let x = estimator.estimate(&[3., 1., 3., 3., 3., 1., 2., 2., 2.], 0.5, 3.5);
+        assert_eq!(
+            weights(&x),
+            [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+        );
+        assert_eq!(mus(&x), [1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0]);
+
+        assert_eq!(
+            x.sigmas,
+            [
+                0.5,
+                1.0,
+                3.0,
+                0.2727272727272727,
+                0.2727272727272727,
+                1.0,
+                1.0,
+                0.2727272727272727,
+                0.2727272727272727,
+                0.5
+            ]
+        );
+    }
+    #[test]
+    fn it_works4() {
+        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        let x = estimator.estimate(&[1.95032376], 1.3862943611198906, 4.852030263919617);
+        assert_eq!(weights(&x), [0.5, 0.5]);
+        assert_eq!(mus(&x), [1.95032376, 3.119162312519754]);
+        assert_eq!(x.sigmas, [1.155245300933242, 3.465735902799726]);
+    }
+    #[test]
+    fn it_works5() {
+        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        let x = estimator.estimate(
+            &[
+                1.53647634, 1.60117829, 1.74975032, 3.78253979, 3.75193948, 4.77576884, 1.64391653,
+                4.18670963, 3.40994179,
+            ],
+            1.3862943611198906,
+            4.852030263919617,
+        );
+        assert_eq!(
+            weights(&x),
+            [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+        );
+        assert_eq!(
+            mus(&x),
+            [
+                1.53647634,
+                1.60117829,
+                1.64391653,
+                1.74975032,
+                3.119162312519754,
+                3.40994179,
+                3.75193948,
+                3.78253979,
+                4.18670963,
+                4.77576884,
+            ]
+        );
+        assert_eq!(
+            x.sigmas,
+            [
+                0.31506690025452055,
+                0.31506690025452055,
+                0.31506690025452055,
+                1.3694119925197539,
+                3.465735902799726,
+                0.3419976899999999,
+                0.3419976899999999,
+                0.4041698400000002,
+                0.5890592099999994,
+                0.31506690025452055
+            ]
+        );
+    }
+    #[test]
+    fn it_works6() {
+        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        let x = estimator.estimate(&[-11.94114835], -23.025850929940457, -6.907755278982137);
+        assert_eq!(weights(&x), [0.5, 0.5]);
+        assert_eq!(mus(&x), [-14.966803104461297, -11.94114835]);
+        assert_eq!(x.sigmas, [16.11809565095832, 8.05904782547916]);
+    }
+    #[test]
+    fn it_works7() {
+        let estimator = ParzenEstimator::new(ParzenEstimatorParameters::default());
+        let x = estimator.estimate(
+            &[
+                -7.26690481,
+                -7.78043504,
+                -22.90676614,
+                -12.96005192,
+                -19.10557622,
+                -13.05687971,
+                -15.45543074,
+                -9.98658409,
+                -10.75822351,
+            ],
+            -23.025850929940457,
+            -6.907755278982137,
+        );
+        assert_eq!(
+            weights(&x),
+            [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+        );
+        assert_eq!(
+            mus(&x),
+            [
+                -22.90676614,
+                -19.10557622,
+                -15.45543074,
+                -14.966803104461297,
+                -13.05687971,
+                -12.96005192,
+                -10.75822351,
+                -9.98658409,
+                -7.78043504,
+                -7.26690481
+            ]
+        );
+        assert_eq!(
+            x.sigmas,
+            [
+                1.4652814228143927,
+                3.801189919999999,
+                3.650145479999999,
+                16.11809565095832,
+                1.9099233944612966,
+                2.201828409999999,
+                2.201828409999999,
+                2.2061490499999987,
+                2.2061490499999987,
+                1.4652814228143927
+            ]
+        );
+    }
+
     fn m(mu: f64, weight: f64) -> WeightedMu {
         WeightedMu { mu, weight }
+    }
+
+    fn mus(x: &Estimated) -> Vec<f64> {
+        x.mus.iter().map(|x| x.mu).collect()
+    }
+
+    fn weights(x: &Estimated) -> Vec<f64> {
+        x.mus.iter().map(|x| x.weight).collect()
     }
 }
