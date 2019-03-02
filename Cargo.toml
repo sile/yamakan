@@ -6,4 +6,5 @@ edition = "2018"
 publish = false
 
 [dependencies]
+statrs = "0.10"
 rand = "0.6"

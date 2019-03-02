@@ -1,7 +1,10 @@
 use crate::float::{self, NonNanF64};
-use crate::iter::linspace;
+use rand;
+use rand::distributions::Distribution;
+use rand::seq::SliceRandom;
 use std::cmp;
-use std::iter::repeat;
+use std::f64::consts::PI;
+use std::f64::EPSILON;
 
 #[derive(Debug)]
 pub struct ParzenEstimatorBuilder {
@@ -58,7 +61,7 @@ impl ParzenEstimatorBuilder {
             entries[pos].sigma = prior_sigma;
         }
 
-        ParzenEstimator { entries }
+        ParzenEstimator { entries, low, high }
     }
 
     fn make_sorted_entries<M, W>(&self, mus: M, weights: W) -> Vec<Entry>
@@ -94,6 +97,8 @@ impl ParzenEstimatorBuilder {
     }
 
     fn setup_sigmas(&self, entries: &mut [Entry], low: f64, high: f64) {
+        assert!(low < high, "low={}, high={}", low, high);
+
         for i in 0..entries.len() {
             let prev = if i == 0 { low } else { entries[i - 1].mu };
             let curr = entries[i].mu;
@@ -131,14 +136,11 @@ impl Default for ParzenEstimatorBuilder {
     }
 }
 
-pub fn default_weights(mus_len: usize) -> impl Iterator<Item = f64> {
-    let n = cmp::max(mus_len, 25) - 25;
-    linspace(1.0 / (mus_len as f64), 1.0, n).chain(repeat(1.0).take(mus_len - n))
-}
-
 #[derive(Debug)]
 pub struct ParzenEstimator {
     entries: Vec<Entry>,
+    low: f64,
+    high: f64,
 }
 impl ParzenEstimator {
     pub fn mus<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
@@ -151,6 +153,71 @@ impl ParzenEstimator {
 
     pub fn sigmas<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
         self.entries.iter().map(|x| x.sigma)
+    }
+
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+
+    pub fn samples_from_gmm(&self) -> SamplesFromGmm {
+        SamplesFromGmm {
+            estimator: self,
+            rng: rand::thread_rng(),
+        }
+    }
+
+    pub fn gmm_log_pdf(&self, samples: &[f64]) -> Vec<f64> {
+        let p_accept = self
+            .entries
+            .iter()
+            .map(|e| (e.normal_cdf(self.high) - e.normal_cdf(self.low)) * e.weight)
+            .sum::<f64>();
+
+        let mut pdf = Vec::with_capacity(samples.len());
+        let jacobian = 1.0;
+        for sample in samples {
+            let mut xs = Vec::with_capacity(self.entries.len());
+            for e in &self.entries {
+                let distance = sample - e.mu;
+                let mahalanobis = (distance / float::max(e.sigma, EPSILON)).powi(2);
+                let z = (2.0 * PI).sqrt() * e.sigma * jacobian;
+                let coefficient = e.weight / z / p_accept;
+                xs.push(-0.5 * mahalanobis + coefficient.ln());
+            }
+
+            let m = xs
+                .iter()
+                .max_by_key(|x| NonNanF64::new(**x))
+                .cloned()
+                .expect("never fails");
+            let v = xs.into_iter().map(|x| (x - m).exp()).sum::<f64>().ln() + m;
+            pdf.push(v);
+        }
+        pdf
+    }
+}
+
+#[derive(Debug)]
+pub struct SamplesFromGmm<'a> {
+    estimator: &'a ParzenEstimator,
+    rng: rand::rngs::ThreadRng, // TODO
+}
+impl<'a> Iterator for SamplesFromGmm<'a> {
+    type Item = f64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let entry = self
+                .estimator
+                .entries
+                .choose_weighted(&mut self.rng, |x| x.weight)
+                .expect("TODO");
+            let d = rand::distributions::Normal::new(entry.mu, entry.sigma);
+            let draw = d.sample(&mut self.rng);
+            if self.estimator.low <= draw && draw <= self.estimator.high {
+                return Some(draw);
+            }
+        }
     }
 }
 
@@ -168,10 +235,16 @@ impl Entry {
             sigma: 0.0,
         }
     }
+
+    fn normal_cdf(&self, x: f64) -> f64 {
+        use statrs::distribution::{Normal, Univariate};
+        Normal::new(self.mu, self.sigma).expect("TODO").cdf(x)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::default_weights;
     use super::*;
 
     fn estimator(mus: &[f64], low: f64, high: f64) -> ParzenEstimator {
@@ -209,6 +282,7 @@ mod tests {
         assert_eq!(est.mus().collect::<Vec<_>>(), [2.0, 3.0]);
         assert_eq!(est.sigmas().collect::<Vec<_>>(), [3.0, 1.5]);
     }
+
     #[test]
     fn it_works3() {
         let est = estimator(&[3., 1., 3., 3., 3., 1., 2., 2., 2.], 0.5, 3.5);
@@ -236,6 +310,7 @@ mod tests {
             ]
         );
     }
+
     #[test]
     fn it_works4() {
         let est = estimator(&[1.95032376], 1.3862943611198906, 4.852030263919617);
@@ -249,6 +324,7 @@ mod tests {
             [1.155245300933242, 3.465735902799726]
         );
     }
+
     #[test]
     fn it_works5() {
         let est = estimator(
@@ -294,6 +370,7 @@ mod tests {
             ]
         );
     }
+
     #[test]
     fn it_works6() {
         let est = estimator(&[-11.94114835], -23.025850929940457, -6.907755278982137);
@@ -307,6 +384,7 @@ mod tests {
             [16.11809565095832, 8.05904782547916]
         );
     }
+
     #[test]
     fn it_works7() {
         let est = estimator(
