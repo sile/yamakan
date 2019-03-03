@@ -1,10 +1,20 @@
 use self::parzen_estimator::ParzenEstimatorBuilder;
 use crate::float::NonNanF64;
-use crate::iter::{bincount, linspace};
+use crate::iter::linspace;
 use std::cmp;
 use std::iter::repeat;
 
+pub use self::categorical::{TpeCategoricalOptimizer, TpeCategoricalOptimizerBuilder};
+
+mod categorical;
+
 pub mod parzen_estimator;
+
+#[derive(Debug)]
+pub struct Observation<P, V> {
+    pub param: P,
+    pub value: V,
+}
 
 pub fn default_weights(mus_len: usize) -> impl Iterator<Item = f64> {
     let n = cmp::max(mus_len, 25) - 25;
@@ -18,10 +28,44 @@ pub fn default_gamma(mus_len: usize) -> usize {
 
 const EI_CANDIDATES: usize = 24;
 
+pub trait TpeStrategy<P, V> {
+    fn divide_observations<'a>(
+        &self,
+        observations: &'a [Observation<P, V>],
+    ) -> (&'a [Observation<P, V>], &'a [Observation<P, V>]);
+    fn weight_superiors(&self, superiors: &[Observation<P, V>]) -> Vec<f64>;
+    fn weight_inferiors(&self, inferiors: &[Observation<P, V>]) -> Vec<f64>;
+}
+
+#[derive(Debug, Default)]
+pub struct DefaultTpeStrategy;
+impl<P, V> TpeStrategy<P, V> for DefaultTpeStrategy {
+    fn divide_observations<'a>(
+        &self,
+        observations: &'a [Observation<P, V>],
+    ) -> (&'a [Observation<P, V>], &'a [Observation<P, V>]) {
+        let n = observations.len() as f64;
+        let gamma = cmp::min((0.25 * n.sqrt()).ceil() as usize, 25);
+        observations.split_at(gamma)
+    }
+
+    fn weight_superiors(&self, superiors: &[Observation<P, V>]) -> Vec<f64> {
+        vec![1.0; superiors.len()]
+    }
+
+    fn weight_inferiors(&self, inferiors: &[Observation<P, V>]) -> Vec<f64> {
+        let n = inferiors.len();
+        let m = cmp::max(n, 25) - 25;
+        linspace(1.0 / (n as f64), 1.0, m)
+            .chain(repeat(1.0).take(n - m))
+            .collect()
+    }
+}
+
 #[derive(Debug)]
 pub struct TpeOptimizer {
     estimator_builder: ParzenEstimatorBuilder,
-    observations: Vec<Observation>,
+    observations: Vec<Ovservation2>,
 }
 impl TpeOptimizer {
     pub fn new() -> Self {
@@ -33,7 +77,7 @@ impl TpeOptimizer {
     }
 
     pub fn tell(&mut self, x: f64, y: f64) {
-        let o = Observation::new(x, y);
+        let o = Ovservation2::new(x, y);
         let i = self
             .observations
             .binary_search_by_key(&NonNanF64::new(o.y), |t| NonNanF64::new(t.y))
@@ -74,62 +118,7 @@ impl TpeOptimizer {
         ))
     }
 
-    pub fn ask_categorical<'a, T>(&self, choices: &'a [T]) -> Option<&'a T> {
-        let (below, above) = self.split_observations();
-        if below.is_empty() || above.is_empty() {
-            return None;
-        }
-        let upper = choices.len();
-
-        // TODO: statrs::distribution::Categorical
-        let weighted_below = self.make_histogram(below, upper);
-        let samples_below = self.sample_from_categorical_dist(&weighted_below, EI_CANDIDATES);
-        let log_likelihoods_below = self.categorical_log_pdf(&samples_below, &weighted_below);
-
-        let weighted_above = self.make_histogram(above, upper);
-        let log_likelihoods_above = self.categorical_log_pdf(&samples_below, &weighted_above);
-
-        let i = self.compare(
-            &samples_below,
-            &log_likelihoods_below,
-            &log_likelihoods_above,
-        );
-        choices.get(i)
-    }
-
-    fn categorical_log_pdf(&self, samples: &[usize], probabilities: &[f64]) -> Vec<f64> {
-        samples
-            .iter()
-            .cloned()
-            .map(|i| probabilities[i].ln())
-            .collect::<Vec<_>>()
-    }
-
-    fn sample_from_categorical_dist(&self, probabilities: &[f64], size: usize) -> Vec<usize> {
-        use rand::distributions::{Distribution, WeightedIndex};
-
-        let dist = WeightedIndex::new(probabilities).expect("TODO");
-        let mut rng = rand::thread_rng();
-        (0..size).map(|_| dist.sample(&mut rng)).collect()
-    }
-
-    fn make_histogram(&self, observations: &[Observation], choices_len: usize) -> Vec<f64> {
-        let weights = default_weights(observations.len());
-        let mut weighted = bincount(
-            observations.iter().map(|o| o.x as usize).zip(weights),
-            choices_len,
-        );
-        for w in &mut weighted {
-            *w += 1.0;
-        }
-        let sum = weighted.iter().sum::<f64>();
-        for w in &mut weighted {
-            *w /= sum;
-        }
-        weighted
-    }
-
-    fn split_observations(&self) -> (&[Observation], &[Observation]) {
+    fn split_observations(&self) -> (&[Ovservation2], &[Ovservation2]) {
         let below_num = default_gamma(self.observations.len()); // TODO
         self.observations.split_at(below_num)
     }
@@ -147,11 +136,11 @@ impl TpeOptimizer {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Observation {
+pub struct Ovservation2 {
     pub x: f64,
     pub y: f64,
 }
-impl Observation {
+impl Ovservation2 {
     pub fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }

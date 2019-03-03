@@ -4,7 +4,7 @@ use std::cmp::{self, Ordering};
 pub struct NonNanF64(f64);
 impl NonNanF64 {
     pub fn new(x: f64) -> Self {
-        assert!(!x.is_nan());
+        assert!(!x.is_nan()); // TODO(?): Convert NaN to Infinity
         Self(x)
     }
 
