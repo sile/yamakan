@@ -81,6 +81,7 @@ impl TpeOptimizer {
         }
         let upper = choices.len();
 
+        // TODO: statrs::distribution::Categorical
         let weighted_below = self.make_histogram(below, upper);
         let samples_below = self.sample_from_categorical_dist(&weighted_below, EI_CANDIDATES);
         let log_likelihoods_below = self.categorical_log_pdf(&samples_below, &weighted_below);
@@ -119,8 +120,7 @@ impl TpeOptimizer {
             choices_len,
         );
         for w in &mut weighted {
-            let prior_weight = 1.0; // TODO: parameterize
-            *w -= prior_weight;
+            *w += 1.0;
         }
         let sum = weighted.iter().sum::<f64>();
         for w in &mut weighted {
