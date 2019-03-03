@@ -3,115 +3,92 @@ use crate::float::NonNanF64;
 use crate::optimizer::Optimizer;
 use crate::parameter::Categorical;
 use rand::distributions::{Distribution, WeightedIndex};
-use rand::rngs::ThreadRng;
+use rand::seq::SliceRandom;
 use rand::Rng;
 use std::marker::PhantomData;
-use std::num::NonZeroUsize;
 
-const DEFAULT_EI_CANDIDATES: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(24) };
-
-pub struct TpeCategoricalOptimizerBuilder<P, V, S = DefaultTpeStrategy, R = ThreadRng> {
+pub struct TpeCategoricalOptimizerBuilder<P, V, S = DefaultTpeStrategy> {
     strategy: S,
-    rng: R,
-    ei_candidates: NonZeroUsize,
+    is_paper: bool,
     _param: PhantomData<P>,
     _value: PhantomData<V>,
 }
-impl<P, V, S, R> TpeCategoricalOptimizerBuilder<P, V, S, R>
+impl<P, V, S> TpeCategoricalOptimizerBuilder<P, V, S>
 where
     P: Categorical,
     V: Ord,
     S: TpeStrategy<P, V> + Default,
-    R: Rng + Default,
 {
     pub fn new() -> Self {
         Self {
             strategy: S::default(),
-            rng: R::default(),
-            ei_candidates: DEFAULT_EI_CANDIDATES,
+            is_paper: true,
             _param: PhantomData,
             _value: PhantomData,
         }
     }
 }
-impl<P, V, S, R> TpeCategoricalOptimizerBuilder<P, V, S, R>
+impl<P, V, S> TpeCategoricalOptimizerBuilder<P, V, S>
 where
     P: Categorical,
     V: Ord,
     S: TpeStrategy<P, V>,
-    R: Rng,
 {
-    pub fn strategy<S1>(self, strategy: S1) -> TpeCategoricalOptimizerBuilder<P, V, S1, R> {
+    pub fn strategy<S1>(self, strategy: S1) -> TpeCategoricalOptimizerBuilder<P, V, S1> {
         TpeCategoricalOptimizerBuilder {
             strategy,
-            rng: self.rng,
-            ei_candidates: self.ei_candidates,
+            is_paper: self.is_paper,
             _param: PhantomData,
             _value: PhantomData,
         }
     }
 
-    pub fn rng<R1>(self, rng: R1) -> TpeCategoricalOptimizerBuilder<P, V, S, R1> {
-        TpeCategoricalOptimizerBuilder {
-            strategy: self.strategy,
-            rng,
-            ei_candidates: self.ei_candidates,
-            _param: PhantomData,
-            _value: PhantomData,
-        }
-    }
-
-    pub fn ei_candidates(mut self, n: NonZeroUsize) -> Self {
-        self.ei_candidates = n;
+    pub fn is_paper(mut self, b: bool) -> Self {
+        self.is_paper = b;
         self
     }
 
-    pub fn finish(self) -> TpeCategoricalOptimizer<P, V, S, R> {
+    pub fn finish(self) -> TpeCategoricalOptimizer<P, V, S> {
         TpeCategoricalOptimizer {
             observations: Vec::new(),
             strategy: self.strategy,
-            rng: self.rng,
-            ei_candidates: self.ei_candidates,
+            is_paper: self.is_paper,
             _param: PhantomData,
         }
     }
 }
 
 #[derive(Debug)]
-pub struct TpeCategoricalOptimizer<P, V, S = DefaultTpeStrategy, R = ThreadRng> {
+pub struct TpeCategoricalOptimizer<P, V, S = DefaultTpeStrategy> {
     observations: Vec<Observation<P, V>>,
     strategy: S,
-    rng: R,
-    ei_candidates: NonZeroUsize,
+    is_paper: bool,
     _param: PhantomData<P>,
 }
-impl<P, V, S, R> TpeCategoricalOptimizer<P, V, S, R>
+impl<P, V, S> TpeCategoricalOptimizer<P, V, S>
 where
     P: Categorical,
     S: TpeStrategy<P, V> + Default,
-    R: Rng + Default,
 {
     pub fn new() -> Self {
         Self {
             observations: Vec::new(),
             strategy: S::default(),
-            rng: R::default(),
-            ei_candidates: DEFAULT_EI_CANDIDATES,
+            is_paper: true,
             _param: PhantomData,
         }
     }
 }
-impl<P, V, S, R> Optimizer for TpeCategoricalOptimizer<P, V, S, R>
+impl<P, V, S> Optimizer for TpeCategoricalOptimizer<P, V, S>
 where
     P: Categorical,
     V: Ord,
     S: TpeStrategy<P, V>,
-    R: Rng,
 {
     type Param = P;
     type Value = V;
 
-    fn ask(&mut self) -> Self::Param {
+    fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
         let (superiors, inferiors) = self.strategy.divide_observations(&self.observations);
         let superior_weights = self.strategy.weight_superiors(superiors);
         let inferior_weights = self.strategy.weight_superiors(inferiors);
@@ -131,14 +108,23 @@ where
                 .zip(inferior_weights.into_iter()),
         );
 
-        superior_histogram
-            .sample_iter(&mut self.rng)
-            .take(self.ei_candidates.get())
+        let mut indices = (0..P::SIZE.get()).collect::<Vec<_>>();
+        indices.shuffle(rng);
+        indices
+            .into_iter()
+            .map(P::from_index)
             .map(|category| {
-                let superior_log_likelihood = superior_histogram.pdf(&category).ln();
-                let inferior_log_likelihood = inferior_histogram.pdf(&category).ln();
-                let ei = superior_log_likelihood - inferior_log_likelihood;
-                (ei, category)
+                if self.is_paper {
+                    let superior_log_likelihood = superior_histogram.pdf(&category);
+                    let inferior_log_likelihood = inferior_histogram.pdf(&category);
+                    let ei = superior_log_likelihood / inferior_log_likelihood;
+                    (ei, category)
+                } else {
+                    let superior_log_likelihood = superior_histogram.pdf(&category).ln();
+                    let inferior_log_likelihood = inferior_histogram.pdf(&category).ln();
+                    let ei = superior_log_likelihood - inferior_log_likelihood;
+                    (ei, category)
+                }
             })
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
             .map(|(_, category)| category)
