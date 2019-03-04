@@ -9,7 +9,6 @@ use std::marker::PhantomData;
 
 pub struct TpeCategoricalOptimizerBuilder<P, V, S = DefaultTpeStrategy> {
     strategy: S,
-    is_paper: bool,
     _param: PhantomData<P>,
     _value: PhantomData<V>,
 }
@@ -22,7 +21,6 @@ where
     pub fn new() -> Self {
         Self {
             strategy: S::default(),
-            is_paper: true,
             _param: PhantomData,
             _value: PhantomData,
         }
@@ -37,22 +35,15 @@ where
     pub fn strategy<S1>(self, strategy: S1) -> TpeCategoricalOptimizerBuilder<P, V, S1> {
         TpeCategoricalOptimizerBuilder {
             strategy,
-            is_paper: self.is_paper,
             _param: PhantomData,
             _value: PhantomData,
         }
-    }
-
-    pub fn is_paper(mut self, b: bool) -> Self {
-        self.is_paper = b;
-        self
     }
 
     pub fn finish(self) -> TpeCategoricalOptimizer<P, V, S> {
         TpeCategoricalOptimizer {
             observations: Vec::new(),
             strategy: self.strategy,
-            is_paper: self.is_paper,
             _param: PhantomData,
         }
     }
@@ -62,7 +53,6 @@ where
 pub struct TpeCategoricalOptimizer<P, V, S = DefaultTpeStrategy> {
     observations: Vec<Observation<P, V>>,
     strategy: S,
-    is_paper: bool,
     _param: PhantomData<P>,
 }
 impl<P, V, S> TpeCategoricalOptimizer<P, V, S>
@@ -74,7 +64,6 @@ where
         Self {
             observations: Vec::new(),
             strategy: S::default(),
-            is_paper: true,
             _param: PhantomData,
         }
     }
@@ -114,17 +103,10 @@ where
             .into_iter()
             .map(P::from_index)
             .map(|category| {
-                if self.is_paper {
-                    let superior_log_likelihood = superior_histogram.pdf(&category);
-                    let inferior_log_likelihood = inferior_histogram.pdf(&category);
-                    let ei = superior_log_likelihood / inferior_log_likelihood;
-                    (ei, category)
-                } else {
-                    let superior_log_likelihood = superior_histogram.pdf(&category).ln();
-                    let inferior_log_likelihood = inferior_histogram.pdf(&category).ln();
-                    let ei = superior_log_likelihood - inferior_log_likelihood;
-                    (ei, category)
-                }
+                let superior_log_likelihood = superior_histogram.pdf(&category).ln();
+                let inferior_log_likelihood = inferior_histogram.pdf(&category).ln();
+                let ei = superior_log_likelihood - inferior_log_likelihood;
+                (ei, category)
             })
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
             .map(|(_, category)| category)
