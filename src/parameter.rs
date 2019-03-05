@@ -1,3 +1,4 @@
+// TODO: remove(?)
 use std::num::NonZeroUsize;
 
 pub trait Categorical {

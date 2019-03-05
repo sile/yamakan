@@ -5,8 +5,10 @@ use std::cmp;
 use std::iter::repeat;
 
 pub use self::categorical::{TpeCategoricalOptimizer, TpeCategoricalOptimizerBuilder};
+pub use self::numerical::TpeNumericalOptimizer;
 
 mod categorical;
+mod numerical;
 
 pub mod parzen_estimator;
 
