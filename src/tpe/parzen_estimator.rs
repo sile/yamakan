@@ -2,10 +2,12 @@ use crate::float::{self, NonNanF64};
 use rand;
 use rand::distributions::Distribution;
 use rand::seq::SliceRandom;
+use rand::Rng;
 use std::cmp;
 use std::f64::consts::PI;
 use std::f64::EPSILON;
 
+// TODO: s/Builder/Options/
 #[derive(Debug)]
 pub struct ParzenEstimatorBuilder {
     consider_prior: bool,
@@ -61,7 +63,17 @@ impl ParzenEstimatorBuilder {
             entries[pos].sigma = prior_sigma;
         }
 
-        ParzenEstimator { entries, low, high }
+        let p_accept = entries
+            .iter()
+            .map(|e| (e.normal_cdf(high) - e.normal_cdf(low)) * e.weight)
+            .sum::<f64>();
+
+        ParzenEstimator {
+            entries,
+            low,
+            high,
+            p_accept,
+        }
     }
 
     fn make_sorted_entries<M, W>(&self, mus: M, weights: W) -> Vec<Entry>
@@ -141,6 +153,7 @@ pub struct ParzenEstimator {
     entries: Vec<Entry>,
     low: f64,
     high: f64,
+    p_accept: f64,
 }
 impl ParzenEstimator {
     pub fn mus<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
@@ -153,17 +166,6 @@ impl ParzenEstimator {
 
     pub fn sigmas<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
         self.entries.iter().map(|x| x.sigma)
-    }
-
-    pub fn entries(&self) -> &[Entry] {
-        &self.entries
-    }
-
-    pub fn samples_from_gmm(&self) -> SamplesFromGmm {
-        SamplesFromGmm {
-            estimator: self,
-            rng: rand::thread_rng(),
-        }
     }
 
     pub fn gmm_log_pdf(&self, samples: &[f64]) -> Vec<f64> {
@@ -195,27 +197,49 @@ impl ParzenEstimator {
         }
         pdf
     }
+
+    pub fn gmm(&self) -> Gmm {
+        Gmm { estimator: self }
+    }
 }
 
+/// Gaussian Mixture Model.
 #[derive(Debug)]
-pub struct SamplesFromGmm<'a> {
+pub struct Gmm<'a> {
     estimator: &'a ParzenEstimator,
-    rng: rand::rngs::ThreadRng, // TODO
 }
-impl<'a> Iterator for SamplesFromGmm<'a> {
-    type Item = f64;
+impl<'a> Gmm<'a> {
+    pub fn log_pdf(&self, param: f64) -> f64 {
+        let mut xs = Vec::with_capacity(self.estimator.entries.len());
+        for e in &self.estimator.entries {
+            let distance = param - e.mu;
+            let mahalanobis = (distance / float::max(e.sigma, EPSILON)).powi(2);
+            let z = (2.0 * PI).sqrt() * e.sigma;
+            let coefficient = e.weight / z / self.estimator.p_accept;
+            xs.push(-0.5 * mahalanobis + coefficient.ln());
+        }
 
-    fn next(&mut self) -> Option<Self::Item> {
+        let m = xs
+            .iter()
+            .max_by_key(|x| NonNanF64::new(**x))
+            .cloned()
+            .expect("never fails"); // TODO: handle 0 entries case
+        let v = xs.into_iter().map(|x| (x - m).exp()).sum::<f64>().ln() + m;
+        v
+    }
+}
+impl<'a> Distribution<f64> for Gmm<'a> {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
         loop {
             let entry = self
                 .estimator
                 .entries
-                .choose_weighted(&mut self.rng, |x| x.weight)
+                .choose_weighted(rng, |x| x.weight)
                 .expect("TODO");
             let d = rand::distributions::Normal::new(entry.mu, entry.sigma);
-            let draw = d.sample(&mut self.rng);
-            if self.estimator.low <= draw && draw <= self.estimator.high {
-                return Some(draw);
+            let draw = d.sample(rng);
+            if self.estimator.low <= draw && draw < self.estimator.high {
+                return draw;
             }
         }
     }
@@ -244,16 +268,15 @@ impl Entry {
 
 #[cfg(test)]
 mod tests {
-    use super::super::default_weights;
     use super::*;
+    use crate::iter::linspace;
+    use std::iter::repeat;
 
     fn estimator(mus: &[f64], low: f64, high: f64) -> ParzenEstimator {
-        ParzenEstimatorBuilder::new().finish(
-            mus.iter().cloned(),
-            default_weights(mus.len()),
-            low,
-            high,
-        )
+        let n = mus.len();
+        let m = cmp::max(n, 25) - 25;
+        let weights = linspace(1.0 / (n as f64), 1.0, m).chain(repeat(1.0).take(n - m));
+        ParzenEstimatorBuilder::new().finish(mus.iter().cloned(), weights, low, high)
     }
 
     #[test]
