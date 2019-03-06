@@ -199,9 +199,22 @@ impl<'a> Gmm<'a> {
 
         xs.into_iter().map(|x| (x - max_x).exp()).sum::<f64>().ln() + max_x
     }
+
+    // pub fn pdf(&self, param: f64) -> f64 {
+    //     self.estimator
+    //         .entries
+    //         .iter()
+    //         .map(|e| e.normal_pdf(param) * e.weight)
+    //         .sum::<f64>()
+    // }
+
+    // pub fn probability(&self, param: f64, q: f64) -> f64 {
+    //     // TODO: (cdf(param+q/2) - cdf(param-q/2)) / self.estimator.p_accept
+    // }
 }
 impl<'a> Distribution<f64> for Gmm<'a> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
+        // TODO: handle q
         loop {
             let entry = self
                 .estimator
@@ -234,7 +247,14 @@ impl Entry {
 
     fn normal_cdf(&self, x: f64) -> f64 {
         use statrs::distribution::{Normal, Univariate};
+        // TODO(?): self.sigma.sqrt()
         Normal::new(self.mu, self.sigma).expect("TODO").cdf(x)
+    }
+
+    fn normal_pdf(&self, x: f64) -> f64 {
+        use statrs::distribution::{Continuous, Normal};
+        // TODO(?): self.sigma.sqrt()
+        Normal::new(self.mu, self.sigma).expect("TODO").pdf(x)
     }
 }
 

@@ -163,6 +163,7 @@ impl<'a, P: CategoricalSpace> Histogram<'a, P> {
         }
     }
 
+    // TODO: s/pdf/probability/
     fn pdf(&self, category: &P::Param) -> f64 {
         self.probabilities[self.param_space.param_to_index(category)]
     }

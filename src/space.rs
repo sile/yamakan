@@ -4,6 +4,7 @@ use std::ops::Range;
 pub trait NumericalSpace {
     type Param;
 
+    // TODO: q
     fn internal_range(&self) -> Range<f64>;
     fn param_to_internal(&self, param: &Self::Param) -> f64;
     fn internal_to_param(&self, internal_value: f64) -> Self::Param;
