@@ -82,6 +82,8 @@ where
     }
 
     fn tell(&mut self, param: Self::Param, value: Self::Value) {
+        // TODO: ignore if NaN
+        // TODO: debug assert range (low <= .. < high)
         let o = Observation { param, value };
         let i = self
             .observations

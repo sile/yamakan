@@ -121,6 +121,7 @@ impl ParzenEstimatorBuilder {
         if !self.consider_endpoints {
             let n = entries.len();
             if n >= 2 {
+                // TODO(?): entries[1].mu - entries[0].mu;
                 entries[0].sigma = entries[1].sigma - entries[0].sigma;
                 entries[n - 1].sigma -= entries[n - 2].sigma;
             }
@@ -168,36 +169,6 @@ impl ParzenEstimator {
         self.entries.iter().map(|x| x.sigma)
     }
 
-    pub fn gmm_log_pdf(&self, samples: &[f64]) -> Vec<f64> {
-        let p_accept = self
-            .entries
-            .iter()
-            .map(|e| (e.normal_cdf(self.high) - e.normal_cdf(self.low)) * e.weight)
-            .sum::<f64>();
-
-        let mut pdf = Vec::with_capacity(samples.len());
-        let jacobian = 1.0;
-        for sample in samples {
-            let mut xs = Vec::with_capacity(self.entries.len());
-            for e in &self.entries {
-                let distance = sample - e.mu;
-                let mahalanobis = (distance / float::max(e.sigma, EPSILON)).powi(2);
-                let z = (2.0 * PI).sqrt() * e.sigma * jacobian;
-                let coefficient = e.weight / z / p_accept;
-                xs.push(-0.5 * mahalanobis + coefficient.ln());
-            }
-
-            let m = xs
-                .iter()
-                .max_by_key(|x| NonNanF64::new(**x))
-                .cloned()
-                .expect("never fails");
-            let v = xs.into_iter().map(|x| (x - m).exp()).sum::<f64>().ln() + m;
-            pdf.push(v);
-        }
-        pdf
-    }
-
     pub fn gmm(&self) -> Gmm {
         Gmm { estimator: self }
     }
@@ -210,22 +181,23 @@ pub struct Gmm<'a> {
 }
 impl<'a> Gmm<'a> {
     pub fn log_pdf(&self, param: f64) -> f64 {
+        use std::f64::NEG_INFINITY;
+
         let mut xs = Vec::with_capacity(self.estimator.entries.len());
+        let mut max_x = NEG_INFINITY; // TODO: handle 0 entries case
         for e in &self.estimator.entries {
             let distance = param - e.mu;
             let mahalanobis = (distance / float::max(e.sigma, EPSILON)).powi(2);
             let z = (2.0 * PI).sqrt() * e.sigma;
             let coefficient = e.weight / z / self.estimator.p_accept;
-            xs.push(-0.5 * mahalanobis + coefficient.ln());
+            let x = -0.5 * mahalanobis + coefficient.ln();
+            if x > max_x {
+                max_x = x;
+            }
+            xs.push(x);
         }
 
-        let m = xs
-            .iter()
-            .max_by_key(|x| NonNanF64::new(**x))
-            .cloned()
-            .expect("never fails"); // TODO: handle 0 entries case
-        let v = xs.into_iter().map(|x| (x - m).exp()).sum::<f64>().ln() + m;
-        v
+        xs.into_iter().map(|x| (x - max_x).exp()).sum::<f64>().ln() + max_x
     }
 }
 impl<'a> Distribution<f64> for Gmm<'a> {
