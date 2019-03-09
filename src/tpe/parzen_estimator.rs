@@ -4,8 +4,6 @@ use rand::distributions::Distribution;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use std::cmp;
-use std::f64::consts::PI;
-use std::f64::EPSILON;
 
 // TODO: s/Builder/Options/
 #[derive(Debug)]
@@ -174,6 +172,11 @@ impl ParzenEstimator {
     }
 }
 
+fn logsumexp(xs: &[f64]) -> f64 {
+    let max_x = xs.iter().max_by_key(|&&x| NonNanF64::new(x)).expect("TODO");
+    xs.iter().map(|&x| (x - max_x).exp()).sum::<f64>().ln() + max_x
+}
+
 /// Gaussian Mixture Model.
 #[derive(Debug)]
 pub struct Gmm<'a> {
@@ -181,40 +184,17 @@ pub struct Gmm<'a> {
 }
 impl<'a> Gmm<'a> {
     pub fn log_pdf(&self, param: f64) -> f64 {
-        use std::f64::NEG_INFINITY;
-
         let mut xs = Vec::with_capacity(self.estimator.entries.len());
-        let mut max_x = NEG_INFINITY; // TODO: handle 0 entries case
         for e in &self.estimator.entries {
-            let distance = param - e.mu;
-            let mahalanobis = (distance / float::max(e.sigma, EPSILON)).powi(2);
-            let z = (2.0 * PI).sqrt() * e.sigma;
-            let coefficient = e.weight / z / self.estimator.p_accept;
-            let x = -0.5 * mahalanobis + coefficient.ln();
-            if x > max_x {
-                max_x = x;
-            }
+            let log_density = e.log_pdf(param);
+            let x = log_density + (e.weight / self.estimator.p_accept).ln();
             xs.push(x);
         }
-
-        xs.into_iter().map(|x| (x - max_x).exp()).sum::<f64>().ln() + max_x
+        logsumexp(&xs)
     }
-
-    // pub fn pdf(&self, param: f64) -> f64 {
-    //     self.estimator
-    //         .entries
-    //         .iter()
-    //         .map(|e| e.normal_pdf(param) * e.weight)
-    //         .sum::<f64>()
-    // }
-
-    // pub fn probability(&self, param: f64, q: f64) -> f64 {
-    //     // TODO: (cdf(param+q/2) - cdf(param-q/2)) / self.estimator.p_accept
-    // }
 }
 impl<'a> Distribution<f64> for Gmm<'a> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
-        // TODO: handle q
         loop {
             let entry = self
                 .estimator
@@ -234,7 +214,7 @@ impl<'a> Distribution<f64> for Gmm<'a> {
 pub struct Entry {
     pub mu: f64,
     pub weight: f64,
-    pub sigma: f64,
+    pub sigma: f64, // std-dev
 }
 impl Entry {
     fn new(mu: f64, weight: f64) -> Self {
@@ -247,14 +227,12 @@ impl Entry {
 
     fn normal_cdf(&self, x: f64) -> f64 {
         use statrs::distribution::{Normal, Univariate};
-        // TODO(?): self.sigma.sqrt()
         Normal::new(self.mu, self.sigma).expect("TODO").cdf(x)
     }
 
-    fn normal_pdf(&self, x: f64) -> f64 {
+    fn log_pdf(&self, x: f64) -> f64 {
         use statrs::distribution::{Continuous, Normal};
-        // TODO(?): self.sigma.sqrt()
-        Normal::new(self.mu, self.sigma).expect("TODO").pdf(x)
+        Normal::new(self.mu, self.sigma).expect("TODO").ln_pdf(x)
     }
 }
 
