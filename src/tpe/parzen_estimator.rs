@@ -119,9 +119,8 @@ impl ParzenEstimatorBuilder {
         if !self.consider_endpoints {
             let n = entries.len();
             if n >= 2 {
-                // TODO(?): entries[1].mu - entries[0].mu;
-                entries[0].sigma = entries[1].sigma - entries[0].sigma;
-                entries[n - 1].sigma -= entries[n - 2].sigma;
+                entries[0].sigma = entries[1].mu - entries[0].mu;
+                entries[n - 1].sigma = entries[n - 1].mu - entries[n - 2].mu;
             }
         }
 
