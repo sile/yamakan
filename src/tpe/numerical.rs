@@ -82,7 +82,9 @@ where
     }
 
     fn tell(&mut self, param: Self::Param, value: Self::Value) {
-        // TODO: ignore if NaN
+        let x = self.param_space.param_to_internal(&param);
+        assert!(x.is_finite(), "internal_param={}", x);
+
         // TODO: debug assert range (low <= .. < high)
         let o = Observation { param, value };
         let i = self

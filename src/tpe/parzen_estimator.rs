@@ -4,6 +4,7 @@ use rand::distributions::Distribution;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use std::cmp;
+use std::f64::EPSILON;
 
 // TODO: s/Builder/Options/
 #[derive(Debug)]
@@ -128,7 +129,7 @@ impl ParzenEstimatorBuilder {
         let minsigma = if self.consider_magic_clip {
             (high - low) / float::min(100.0, 1.0 + (entries.len() as f64))
         } else {
-            0.0
+            EPSILON
         };
         for x in entries {
             x.sigma = float::clip(minsigma, x.sigma, maxsigma);
