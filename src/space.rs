@@ -1,62 +1,30 @@
-use std::num::NonZeroUsize;
 use std::ops::Range;
 
-pub trait NumericalSpace {
-    type Param;
+pub trait SearchSpace {
+    type ExternalParam;
+    type InternalParam;
 
-    // TODO: q
-    fn internal_range(&self) -> Range<f64>;
-    fn param_to_internal(&self, param: &Self::Param) -> f64;
-    fn internal_to_param(&self, internal_value: f64) -> Self::Param;
+    fn internal_range(&self) -> Range<Self::InternalParam>;
+    fn to_internal(&self, param: &Self::ExternalParam) -> Self::InternalParam;
+    fn to_external(&self, param: &Self::InternalParam) -> Self::ExternalParam;
 }
 
-#[derive(Debug)]
-pub struct UniformF64Space {
-    pub low: f64,
-    pub high: f64,
-}
-impl NumericalSpace for UniformF64Space {
-    type Param = f64;
+#[derive(Debug, Default)]
+pub struct Bool;
+impl SearchSpace for Bool {
+    type ExternalParam = bool;
+    type InternalParam = usize;
 
-    fn internal_range(&self) -> Range<f64> {
-        Range {
-            start: self.low,
-            end: self.high,
-        }
+    fn internal_range(&self) -> Range<Self::InternalParam> {
+        Range { start: 0, end: 2 }
     }
 
-    fn param_to_internal(&self, param: &Self::Param) -> f64 {
-        *param
-    }
-
-    fn internal_to_param(&self, internal_value: f64) -> Self::Param {
-        internal_value
-    }
-}
-
-pub trait CategoricalSpace {
-    type Param;
-
-    fn size(&self) -> NonZeroUsize;
-    fn param_to_index(&self, param: &Self::Param) -> usize;
-    fn index_to_param(&self, index: usize) -> Self::Param;
-}
-
-#[derive(Debug)]
-pub struct BoolSpace;
-impl CategoricalSpace for BoolSpace {
-    type Param = bool;
-
-    fn size(&self) -> NonZeroUsize {
-        unsafe { NonZeroUsize::new_unchecked(2) }
-    }
-
-    fn param_to_index(&self, param: &Self::Param) -> usize {
+    fn to_internal(&self, param: &Self::ExternalParam) -> Self::InternalParam {
         *param as usize
     }
 
-    fn index_to_param(&self, index: usize) -> Self::Param {
-        debug_assert!(index < 2);
-        index != 0
+    fn to_external(&self, param: &Self::InternalParam) -> Self::ExternalParam {
+        debug_assert!(*param < 2);
+        *param != 0
     }
 }

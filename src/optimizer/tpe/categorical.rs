@@ -1,12 +1,13 @@
-use super::{DefaultTpeStrategy, Observation, TpeStrategy};
+use super::{DefaultTpeStrategy, TpeStrategy};
 use crate::float::NonNanF64;
-use crate::optimizer::Optimizer;
-use crate::space::CategoricalSpace;
+use crate::optimizer::{Observation, Optimizer};
+use crate::space::SearchSpace;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use std::marker::PhantomData;
 
+// TODO(?): s/P/S/
 pub struct TpeCategoricalOptimizerBuilder<P, V, S = DefaultTpeStrategy> {
     strategy: S,
     prior_weight: f64,
@@ -15,9 +16,9 @@ pub struct TpeCategoricalOptimizerBuilder<P, V, S = DefaultTpeStrategy> {
 }
 impl<P, V, S> TpeCategoricalOptimizerBuilder<P, V, S>
 where
-    P: CategoricalSpace,
+    P: SearchSpace<InternalParam = usize>,
     V: Ord,
-    S: TpeStrategy<P::Param, V> + Default,
+    S: TpeStrategy<P::ExternalParam, V> + Default,
 {
     pub fn new() -> Self {
         Self {
@@ -30,9 +31,9 @@ where
 }
 impl<P, V, S> TpeCategoricalOptimizerBuilder<P, V, S>
 where
-    P: CategoricalSpace,
+    P: SearchSpace<InternalParam = usize>,
     V: Ord,
-    S: TpeStrategy<P::Param, V>,
+    S: TpeStrategy<P::ExternalParam, V>,
 {
     pub fn strategy<S1>(self, strategy: S1) -> TpeCategoricalOptimizerBuilder<P, V, S1> {
         TpeCategoricalOptimizerBuilder {
@@ -59,17 +60,18 @@ where
 }
 
 #[derive(Debug)]
-pub struct TpeCategoricalOptimizer<P: CategoricalSpace, V, S = DefaultTpeStrategy> {
-    observations: Vec<Observation<P::Param, V>>,
+pub struct TpeCategoricalOptimizer<P: SearchSpace<InternalParam = usize>, V, S = DefaultTpeStrategy>
+{
+    observations: Vec<Observation<P::ExternalParam, V>>,
     strategy: S,
     param_space: P,
     prior_weight: f64,
 }
 impl<P, V, S> TpeCategoricalOptimizer<P, V, S>
 where
-    P: CategoricalSpace,
+    P: SearchSpace<InternalParam = usize>,
     V: Ord,
-    S: TpeStrategy<P::Param, V> + Default,
+    S: TpeStrategy<P::ExternalParam, V> + Default,
 {
     pub fn new(param_space: P) -> Self {
         TpeCategoricalOptimizerBuilder::new().finish(param_space)
@@ -77,11 +79,11 @@ where
 }
 impl<P, V, S> Optimizer for TpeCategoricalOptimizer<P, V, S>
 where
-    P: CategoricalSpace,
+    P: SearchSpace<InternalParam = usize>,
     V: Ord,
-    S: TpeStrategy<P::Param, V>,
+    S: TpeStrategy<P::ExternalParam, V>,
 {
-    type Param = P::Param;
+    type Param = P::ExternalParam;
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
@@ -108,11 +110,13 @@ where
             self.prior_weight,
         );
 
-        let mut indices = (0..self.param_space.size().get()).collect::<Vec<_>>();
+        let space_size =
+            self.param_space.internal_range().end - self.param_space.internal_range().start;
+        let mut indices = (0..space_size).collect::<Vec<_>>();
         indices.shuffle(rng);
         indices
-            .into_iter()
-            .map(|i| self.param_space.index_to_param(i))
+            .iter()
+            .map(|i| self.param_space.to_external(i))
             .map(|category| {
                 let superior_log_likelihood = superior_histogram.pdf(&category).ln();
                 let inferior_log_likelihood = inferior_histogram.pdf(&category).ln();
@@ -140,14 +144,15 @@ struct Histogram<'a, P> {
     dist: WeightedIndex<f64>,
     param_space: &'a P,
 }
-impl<'a, P: CategoricalSpace> Histogram<'a, P> {
+impl<'a, P: SearchSpace<InternalParam = usize>> Histogram<'a, P> {
     fn new<I>(observations: I, param_space: &'a P, prior_weight: f64) -> Self
     where
-        I: Iterator<Item = (&'a P::Param, f64)>,
+        I: Iterator<Item = (&'a P::ExternalParam, f64)>,
     {
-        let mut probabilities = vec![prior_weight; param_space.size().get()];
+        let space_size = param_space.internal_range().end - param_space.internal_range().start;
+        let mut probabilities = vec![prior_weight; space_size];
         for (param, weight) in observations {
-            probabilities[param_space.param_to_index(param)] += weight;
+            probabilities[param_space.to_internal(param)] += weight;
         }
 
         let sum = probabilities.iter().sum::<f64>();
@@ -164,12 +169,14 @@ impl<'a, P: CategoricalSpace> Histogram<'a, P> {
     }
 
     // TODO: s/pdf/probability/
-    fn pdf(&self, category: &P::Param) -> f64 {
-        self.probabilities[self.param_space.param_to_index(category)]
+    fn pdf(&self, category: &P::ExternalParam) -> f64 {
+        self.probabilities[self.param_space.to_internal(category)]
     }
 }
-impl<'a, P: CategoricalSpace> Distribution<P::Param> for Histogram<'a, P> {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> P::Param {
-        self.param_space.index_to_param(self.dist.sample(rng))
+impl<'a, P: SearchSpace<InternalParam = usize>> Distribution<P::ExternalParam>
+    for Histogram<'a, P>
+{
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> P::ExternalParam {
+        self.param_space.to_external(&self.dist.sample(rng))
     }
 }

@@ -1,4 +1,5 @@
 use crate::iter::linspace;
+use crate::optimizer::Observation;
 use std::cmp;
 use std::iter::repeat;
 
@@ -9,12 +10,6 @@ pub use self::parzen_estimator::ParzenEstimatorBuilder; // TODO
 mod categorical;
 mod numerical;
 mod parzen_estimator;
-
-#[derive(Debug)]
-pub struct Observation<P, V> {
-    pub param: P,
-    pub value: V,
-}
 
 pub trait TpeStrategy<P, V> {
     fn divide_observations<'a>(
