@@ -1,8 +1,5 @@
 use rand::Rng;
 
-pub mod random;
-pub mod tpe;
-
 pub trait Optimizer {
     type Param;
     type Value;
