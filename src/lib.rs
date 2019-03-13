@@ -1,4 +1,3 @@
-// TODO: rename crate
 pub use self::optimizer::{Observation, Optimizer};
 pub use self::space::SearchSpace;
 

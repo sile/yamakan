@@ -1,5 +1,5 @@
 [package]
-name = "bbo"
+name = "yamakan"
 version = "0.0.1"
 authors = ["Takeru Ohta <phjgt308@gmail.com>"]
 edition = "2018"
