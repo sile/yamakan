@@ -20,3 +20,28 @@ impl SearchSpace for Bool {
         *param != 0
     }
 }
+
+#[derive(Debug, Default)]
+pub struct UniformF64 {
+    pub low: f64,  // inclusive
+    pub high: f64, // exclusive
+}
+impl SearchSpace for UniformF64 {
+    type ExternalParam = f64;
+    type InternalParam = f64;
+
+    fn internal_range(&self) -> Range<Self::InternalParam> {
+        Range {
+            start: self.low,
+            end: self.high,
+        }
+    }
+
+    fn to_internal(&self, param: &Self::ExternalParam) -> Self::InternalParam {
+        *param
+    }
+
+    fn to_external(&self, param: &Self::InternalParam) -> Self::ExternalParam {
+        *param
+    }
+}
