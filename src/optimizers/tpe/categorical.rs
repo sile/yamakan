@@ -69,6 +69,10 @@ where
             observations: Vec::new(),
         }
     }
+
+    pub fn param_space(&self) -> &S {
+        &self.param_space
+    }
 }
 impl<S, V, P> Optimizer for TpeCategoricalOptimizer<S, V, P>
 where
