@@ -1,7 +1,7 @@
 use crate::float::NonNanF64;
 use crate::optimizer::{Observation, Optimizer};
 use crate::optimizers::tpe::{DefaultPreprocessor, Preprocess};
-use crate::space::SearchSpace;
+use crate::space::ParamSpace;
 use failure::Error;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::seq::SliceRandom;
@@ -40,17 +40,17 @@ impl<P: Default> Default for TpeCategoricalOptions<P> {
 #[derive(Debug)]
 pub struct TpeCategoricalOptimizer<S, V, P = DefaultPreprocessor>
 where
-    S: SearchSpace<InternalParam = usize>,
+    S: ParamSpace<Internal = usize>,
 {
     param_space: S,
     options: TpeCategoricalOptions<P>,
-    observations: Vec<Observation<S::ExternalParam, V>>,
+    observations: Vec<Observation<S::External, V>>,
 }
 impl<S, V, P> TpeCategoricalOptimizer<S, V, P>
 where
-    S: SearchSpace<InternalParam = usize>,
+    S: ParamSpace<Internal = usize>,
     V: Ord,
-    P: Preprocess<S::ExternalParam, V> + Default,
+    P: Preprocess<S::External, V> + Default,
 {
     pub fn new(param_space: S) -> Self {
         Self::with_options(param_space, TpeCategoricalOptions::default())
@@ -58,9 +58,9 @@ where
 }
 impl<S, V, P> TpeCategoricalOptimizer<S, V, P>
 where
-    S: SearchSpace<InternalParam = usize>,
+    S: ParamSpace<Internal = usize>,
     V: Ord,
-    P: Preprocess<S::ExternalParam, V>,
+    P: Preprocess<S::External, V>,
 {
     pub fn with_options(param_space: S, options: TpeCategoricalOptions<P>) -> Self {
         Self {
@@ -72,11 +72,11 @@ where
 }
 impl<S, V, P> Optimizer for TpeCategoricalOptimizer<S, V, P>
 where
-    S: SearchSpace<InternalParam = usize>,
+    S: ParamSpace<Internal = usize>,
     V: Ord,
-    P: Preprocess<S::ExternalParam, V>,
+    P: Preprocess<S::External, V>,
 {
-    type Param = S::ExternalParam;
+    type Param = S::External;
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
@@ -111,7 +111,7 @@ where
         indices.shuffle(rng);
         indices
             .iter()
-            .map(|i| self.param_space.to_external(i))
+            .map(|i| self.param_space.externalize(i))
             .map(|category| {
                 let superior_log_likelihood = superior_histogram.pmf(&category).ln();
                 let inferior_log_likelihood = inferior_histogram.pmf(&category).ln();
@@ -139,15 +139,15 @@ struct Histogram<'a, P> {
     dist: WeightedIndex<f64>,
     param_space: &'a P,
 }
-impl<'a, P: SearchSpace<InternalParam = usize>> Histogram<'a, P> {
+impl<'a, P: ParamSpace<Internal = usize>> Histogram<'a, P> {
     fn new<I>(observations: I, param_space: &'a P, prior_weight: f64) -> Self
     where
-        I: Iterator<Item = (&'a P::ExternalParam, f64)>,
+        I: Iterator<Item = (&'a P::External, f64)>,
     {
         let space_size = param_space.internal_range().end - param_space.internal_range().start;
         let mut probabilities = vec![prior_weight; space_size];
         for (param, weight) in observations {
-            probabilities[param_space.to_internal(param)] += weight;
+            probabilities[param_space.internalize(param)] += weight;
         }
 
         let sum = probabilities.iter().sum::<f64>();
@@ -163,14 +163,12 @@ impl<'a, P: SearchSpace<InternalParam = usize>> Histogram<'a, P> {
         }
     }
 
-    fn pmf(&self, category: &P::ExternalParam) -> f64 {
-        self.probabilities[self.param_space.to_internal(category)]
+    fn pmf(&self, category: &P::External) -> f64 {
+        self.probabilities[self.param_space.internalize(category)]
     }
 }
-impl<'a, P: SearchSpace<InternalParam = usize>> Distribution<P::ExternalParam>
-    for Histogram<'a, P>
-{
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> P::ExternalParam {
-        self.param_space.to_external(&self.dist.sample(rng))
+impl<'a, P: ParamSpace<Internal = usize>> Distribution<P::External> for Histogram<'a, P> {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> P::External {
+        self.param_space.externalize(&self.dist.sample(rng))
     }
 }

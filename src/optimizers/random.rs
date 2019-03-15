@@ -1,5 +1,5 @@
 use crate::optimizer::Optimizer;
-use crate::space::SearchSpace;
+use crate::space::ParamSpace;
 use rand::distributions::uniform::SampleUniform;
 use rand::Rng;
 use std::marker::PhantomData;
@@ -11,8 +11,8 @@ pub struct RandomOptimizer<S, V> {
 }
 impl<S, V> RandomOptimizer<S, V>
 where
-    S: SearchSpace,
-    S::InternalParam: SampleUniform,
+    S: ParamSpace,
+    S::Internal: SampleUniform,
 {
     pub fn new(space: S) -> Self {
         Self {
@@ -27,24 +27,24 @@ where
 }
 impl<S, V> Optimizer for RandomOptimizer<S, V>
 where
-    S: SearchSpace,
-    S::InternalParam: SampleUniform,
+    S: ParamSpace,
+    S::Internal: SampleUniform,
 {
-    type Param = S::ExternalParam;
+    type Param = S::External;
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
         let r = self.space.internal_range();
         let i = rng.gen_range(r.start, r.end);
-        self.space.to_external(&i)
+        self.space.externalize(&i)
     }
 
     fn tell(&mut self, _param: Self::Param, _value: Self::Value) {}
 }
 impl<S, V> Default for RandomOptimizer<S, V>
 where
-    S: Default + SearchSpace,
-    S::InternalParam: SampleUniform,
+    S: Default + ParamSpace,
+    S::Internal: SampleUniform,
 {
     fn default() -> Self {
         Self::new(S::default())

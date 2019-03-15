@@ -2,7 +2,7 @@ use super::ParzenEstimatorBuilder;
 use super::{DefaultTpeStrategy, TpeStrategy};
 use crate::float::NonNanF64;
 use crate::optimizer::{Observation, Optimizer};
-use crate::space::SearchSpace;
+use crate::space::ParamSpace;
 use rand::distributions::Distribution;
 use rand::Rng;
 
@@ -10,17 +10,17 @@ use rand::Rng;
 #[derive(Debug)]
 pub struct TpeNumericalOptimizer<P, V, S = DefaultTpeStrategy>
 where
-    P: SearchSpace<InternalParam = f64>,
+    P: ParamSpace<Internal = f64>,
 {
     param_space: P,
     strategy: S,
-    observations: Vec<Observation<P::ExternalParam, V>>,
+    observations: Vec<Observation<P::External, V>>,
     estimator_builder: ParzenEstimatorBuilder,
     ei_candidates: usize,
 }
 impl<P, V> TpeNumericalOptimizer<P, V, DefaultTpeStrategy>
 where
-    P: SearchSpace<InternalParam = f64>,
+    P: ParamSpace<Internal = f64>,
     V: Ord,
 {
     pub fn new(param_space: P) -> Self {
@@ -35,11 +35,11 @@ where
 }
 impl<P, V, S> Optimizer for TpeNumericalOptimizer<P, V, S>
 where
-    P: SearchSpace<InternalParam = f64>,
+    P: ParamSpace<Internal = f64>,
     V: Ord,
-    S: TpeStrategy<P::ExternalParam, V>,
+    S: TpeStrategy<P::External, V>,
 {
-    type Param = P::ExternalParam;
+    type Param = P::External;
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
@@ -53,7 +53,7 @@ where
         let superior_estimator = self.estimator_builder.finish(
             superiors
                 .iter()
-                .map(|o| self.param_space.to_internal(&o.param)),
+                .map(|o| self.param_space.internalize(&o.param)),
             superior_weights.into_iter(),
             self.param_space.internal_range().start,
             self.param_space.internal_range().end,
@@ -62,7 +62,7 @@ where
         let inferior_estimator = self.estimator_builder.finish(
             inferiors
                 .iter()
-                .map(|o| self.param_space.to_internal(&o.param)),
+                .map(|o| self.param_space.internalize(&o.param)),
             inferior_weights.into_iter(),
             self.param_space.internal_range().start,
             self.param_space.internal_range().end,
@@ -79,7 +79,7 @@ where
                 (ei, candidate)
             })
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
-            .map(|(_, internal)| self.param_space.to_external(&internal))
+            .map(|(_, internal)| self.param_space.externalize(&internal))
             .expect("never fails")
     }
 
@@ -87,7 +87,7 @@ where
         // TODO(?): add `is_sorted` flag and do sort in `ask` if needed
         // (e.g., `merge(existings, sort(news))`)
 
-        let x = self.param_space.to_internal(&param);
+        let x = self.param_space.internalize(&param);
         assert!(x.is_finite(), "internal_param={}", x);
 
         // TODO: debug assert range (low <= .. < high)

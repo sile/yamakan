@@ -2,7 +2,7 @@
 extern crate failure;
 
 pub use self::optimizer::{Observation, Optimizer};
-pub use self::space::SearchSpace;
+pub use self::space::ParamSpace;
 
 pub mod budget;
 pub mod optimizers;
