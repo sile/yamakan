@@ -148,10 +148,11 @@ impl<'a, P: ParamSpace<Internal = usize>> Histogram<'a, P> {
     where
         I: Iterator<Item = (&'a P::External, f64)>,
     {
-        let space_size = param_space.internal_range().end - param_space.internal_range().start;
+        let low = param_space.internal_range().start;
+        let space_size = param_space.internal_range().end - low;
         let mut probabilities = vec![prior_weight; space_size];
         for (param, weight) in observations {
-            probabilities[param_space.internalize(param)] += weight;
+            probabilities[param_space.internalize(param) - low] += weight;
         }
 
         let sum = probabilities.iter().sum::<f64>();
@@ -168,11 +169,13 @@ impl<'a, P: ParamSpace<Internal = usize>> Histogram<'a, P> {
     }
 
     fn pmf(&self, category: &P::External) -> f64 {
-        self.probabilities[self.param_space.internalize(category)]
+        let low = self.param_space.internal_range().start;
+        self.probabilities[self.param_space.internalize(category) - low]
     }
 }
 impl<'a, P: ParamSpace<Internal = usize>> Distribution<P::External> for Histogram<'a, P> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> P::External {
-        self.param_space.externalize(&self.dist.sample(rng))
+        let low = self.param_space.internal_range().start;
+        self.param_space.externalize(&(self.dist.sample(rng) + low))
     }
 }
