@@ -47,6 +47,7 @@ impl ParzenEstimatorBuilder {
         let mut entries = self.make_sorted_entries(mus, weights);
 
         let prior_pos = if self.consider_prior {
+            // TODO: `|| is_empty()`
             let prior_mu = 0.5 * (low + high);
             let inserted_pos = self.insert_prior_entry(&mut entries, prior_mu);
             Some(inserted_pos)

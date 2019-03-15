@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+// TODO: s/SearchSpace/ParamSpace/
 pub trait SearchSpace {
     type ExternalParam;
     type InternalParam;

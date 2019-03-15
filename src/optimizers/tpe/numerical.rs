@@ -43,7 +43,8 @@ where
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
-        let (superiors, inferiors) = self.strategy.divide_observations(&self.observations);
+        let gamma = self.strategy.divide_observations(&self.observations);
+        let (superiors, inferiors) = self.observations.split_at(gamma);
         let superior_weights = self.strategy.weight_superiors(superiors);
         let inferior_weights = self.strategy.weight_superiors(inferiors);
         assert_eq!(superiors.len(), superior_weights.len());

@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate failure;
+
 pub use self::optimizer::{Observation, Optimizer};
 pub use self::space::SearchSpace;
 

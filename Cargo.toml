@@ -6,5 +6,6 @@ edition = "2018"
 publish = false
 
 [dependencies]
-statrs = "0.10"
+failure = "0.1"
+statrs = "0.10"  # TODO: remove
 rand = "0.6"

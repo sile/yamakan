@@ -1,113 +1,108 @@
-use super::{DefaultTpeStrategy, TpeStrategy};
 use crate::float::NonNanF64;
 use crate::optimizer::{Observation, Optimizer};
+use crate::optimizers::tpe::{DefaultPreprocessor, Preprocess};
 use crate::space::SearchSpace;
+use failure::Error;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::seq::SliceRandom;
 use rand::Rng;
-use std::marker::PhantomData;
 
-// TODO(?): s/P/S/
-pub struct TpeCategoricalOptimizerBuilder<P, V, S = DefaultTpeStrategy> {
-    strategy: S,
+#[derive(Debug)]
+pub struct TpeCategoricalOptions<P> {
+    preprocessor: P,
     prior_weight: f64,
-    _param_space: PhantomData<P>,
-    _value: PhantomData<V>,
 }
-impl<P, V, S> TpeCategoricalOptimizerBuilder<P, V, S>
-where
-    P: SearchSpace<InternalParam = usize>,
-    V: Ord,
-    S: TpeStrategy<P::ExternalParam, V> + Default,
-{
-    pub fn new() -> Self {
+impl<P> TpeCategoricalOptions<P> {
+    pub fn new(preprocessor: P) -> Self {
         Self {
-            strategy: S::default(),
+            preprocessor,
             prior_weight: 1.0,
-            _param_space: PhantomData,
-            _value: PhantomData,
         }
+    }
+
+    pub fn prior_weight(mut self, weight: f64) -> Result<Self, Error> {
+        ensure!(weight > 0.0, "weight={}", weight);
+        ensure!(weight.is_finite(), "weight={}", weight);
+
+        self.prior_weight = weight;
+        Ok(self)
     }
 }
-impl<P, V, S> TpeCategoricalOptimizerBuilder<P, V, S>
-where
-    P: SearchSpace<InternalParam = usize>,
-    V: Ord,
-    S: TpeStrategy<P::ExternalParam, V>,
-{
-    pub fn strategy<S1>(self, strategy: S1) -> TpeCategoricalOptimizerBuilder<P, V, S1> {
-        TpeCategoricalOptimizerBuilder {
-            strategy,
-            prior_weight: self.prior_weight,
-            _param_space: PhantomData,
-            _value: PhantomData,
-        }
-    }
-
-    pub fn prior_weight(mut self, weight: f64) -> Self {
-        self.prior_weight = weight;
-        self
-    }
-
-    pub fn finish(self, param_space: P) -> TpeCategoricalOptimizer<P, V, S> {
-        TpeCategoricalOptimizer {
-            observations: Vec::new(),
-            strategy: self.strategy,
-            prior_weight: self.prior_weight,
-            param_space,
+impl<P: Default> Default for TpeCategoricalOptions<P> {
+    fn default() -> Self {
+        TpeCategoricalOptions {
+            preprocessor: P::default(),
+            prior_weight: 1.0,
         }
     }
 }
 
 #[derive(Debug)]
-pub struct TpeCategoricalOptimizer<P: SearchSpace<InternalParam = usize>, V, S = DefaultTpeStrategy>
-{
-    observations: Vec<Observation<P::ExternalParam, V>>,
-    strategy: S,
-    param_space: P,
-    prior_weight: f64,
-}
-impl<P, V, S> TpeCategoricalOptimizer<P, V, S>
+pub struct TpeCategoricalOptimizer<S, V, P = DefaultPreprocessor>
 where
-    P: SearchSpace<InternalParam = usize>,
-    V: Ord,
-    S: TpeStrategy<P::ExternalParam, V> + Default,
+    S: SearchSpace<InternalParam = usize>,
 {
-    pub fn new(param_space: P) -> Self {
-        TpeCategoricalOptimizerBuilder::new().finish(param_space)
+    param_space: S,
+    options: TpeCategoricalOptions<P>,
+    observations: Vec<Observation<S::ExternalParam, V>>,
+}
+impl<S, V, P> TpeCategoricalOptimizer<S, V, P>
+where
+    S: SearchSpace<InternalParam = usize>,
+    V: Ord,
+    P: Preprocess<S::ExternalParam, V> + Default,
+{
+    pub fn new(param_space: S) -> Self {
+        Self::with_options(param_space, TpeCategoricalOptions::default())
     }
 }
-impl<P, V, S> Optimizer for TpeCategoricalOptimizer<P, V, S>
+impl<S, V, P> TpeCategoricalOptimizer<S, V, P>
 where
-    P: SearchSpace<InternalParam = usize>,
+    S: SearchSpace<InternalParam = usize>,
     V: Ord,
-    S: TpeStrategy<P::ExternalParam, V>,
+    P: Preprocess<S::ExternalParam, V>,
 {
-    type Param = P::ExternalParam;
+    pub fn with_options(param_space: S, options: TpeCategoricalOptions<P>) -> Self {
+        Self {
+            param_space,
+            options,
+            observations: Vec::new(),
+        }
+    }
+}
+impl<S, V, P> Optimizer for TpeCategoricalOptimizer<S, V, P>
+where
+    S: SearchSpace<InternalParam = usize>,
+    V: Ord,
+    P: Preprocess<S::ExternalParam, V>,
+{
+    type Param = S::ExternalParam;
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
-        let (superiors, inferiors) = self.strategy.divide_observations(&self.observations);
-        let superior_weights = self.strategy.weight_superiors(superiors);
-        let inferior_weights = self.strategy.weight_superiors(inferiors);
-        assert_eq!(superiors.len(), superior_weights.len());
-        assert_eq!(inferiors.len(), inferior_weights.len());
+        let gamma = self
+            .options
+            .preprocessor
+            .divide_observations(&self.observations);
+        let (superiors, inferiors) = self.observations.split_at(gamma);
+        let superior_weights = self
+            .options
+            .preprocessor
+            .weight_observations(superiors, true);
+        let inferior_weights = self
+            .options
+            .preprocessor
+            .weight_observations(inferiors, false);
 
         let superior_histogram = Histogram::new(
-            superiors
-                .iter()
-                .map(|o| &o.param)
-                .zip(superior_weights.into_iter()),
+            superiors.iter().map(|o| &o.param).zip(superior_weights),
             &self.param_space,
-            self.prior_weight,
+            self.options.prior_weight,
         );
         let inferior_histogram = Histogram::new(
-            inferiors
-                .iter()
-                .map(|o| &o.param)
-                .zip(inferior_weights.into_iter()),
+            inferiors.iter().map(|o| &o.param).zip(inferior_weights),
             &self.param_space,
-            self.prior_weight,
+            self.options.prior_weight,
         );
 
         let space_size =
@@ -118,8 +113,8 @@ where
             .iter()
             .map(|i| self.param_space.to_external(i))
             .map(|category| {
-                let superior_log_likelihood = superior_histogram.pdf(&category).ln();
-                let inferior_log_likelihood = inferior_histogram.pdf(&category).ln();
+                let superior_log_likelihood = superior_histogram.pmf(&category).ln();
+                let inferior_log_likelihood = inferior_histogram.pmf(&category).ln();
                 let ei = superior_log_likelihood - inferior_log_likelihood;
                 (ei, category)
             })
@@ -168,8 +163,7 @@ impl<'a, P: SearchSpace<InternalParam = usize>> Histogram<'a, P> {
         }
     }
 
-    // TODO: s/pdf/probability/
-    fn pdf(&self, category: &P::ExternalParam) -> f64 {
+    fn pmf(&self, category: &P::ExternalParam) -> f64 {
         self.probabilities[self.param_space.to_internal(category)]
     }
 }
