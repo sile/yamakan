@@ -1,6 +1,6 @@
+use super::{DefaultPreprocessor, Preprocess};
 use crate::float::NonNanF64;
 use crate::optimizer::{Observation, Optimizer};
-use crate::optimizers::tpe::{DefaultPreprocessor, Preprocess};
 use crate::space::ParamSpace;
 use failure::Error;
 use rand::distributions::{Distribution, WeightedIndex};
@@ -8,12 +8,12 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 
 #[derive(Debug)]
-pub struct TpeCategoricalOptions<P> {
-    preprocessor: P,
+pub struct TpeCategoricalOptions<T> {
+    preprocessor: T,
     prior_weight: f64,
 }
-impl<P> TpeCategoricalOptions<P> {
-    pub fn new(preprocessor: P) -> Self {
+impl<T> TpeCategoricalOptions<T> {
+    pub fn new(preprocessor: T) -> Self {
         Self {
             preprocessor,
             prior_weight: 1.0,
@@ -28,41 +28,41 @@ impl<P> TpeCategoricalOptions<P> {
         Ok(self)
     }
 }
-impl<P: Default> Default for TpeCategoricalOptions<P> {
+impl<T: Default> Default for TpeCategoricalOptions<T> {
     fn default() -> Self {
         TpeCategoricalOptions {
-            preprocessor: P::default(),
+            preprocessor: T::default(),
             prior_weight: 1.0,
         }
     }
 }
 
 #[derive(Debug)]
-pub struct TpeCategoricalOptimizer<S, V, P = DefaultPreprocessor>
+pub struct TpeCategoricalOptimizer<P, V, T = DefaultPreprocessor>
 where
-    S: ParamSpace<Internal = usize>,
+    P: ParamSpace<Internal = usize>,
 {
-    param_space: S,
-    options: TpeCategoricalOptions<P>,
-    observations: Vec<Observation<S::External, V>>,
+    param_space: P,
+    options: TpeCategoricalOptions<T>,
+    observations: Vec<Observation<P::External, V>>,
 }
-impl<S, V, P> TpeCategoricalOptimizer<S, V, P>
+impl<P, V, T> TpeCategoricalOptimizer<P, V, T>
 where
-    S: ParamSpace<Internal = usize>,
+    P: ParamSpace<Internal = usize>,
     V: Ord,
-    P: Preprocess<S::External, V> + Default,
+    T: Preprocess<P::External, V> + Default,
 {
-    pub fn new(param_space: S) -> Self {
+    pub fn new(param_space: P) -> Self {
         Self::with_options(param_space, TpeCategoricalOptions::default())
     }
 }
-impl<S, V, P> TpeCategoricalOptimizer<S, V, P>
+impl<P, V, T> TpeCategoricalOptimizer<P, V, T>
 where
-    S: ParamSpace<Internal = usize>,
+    P: ParamSpace<Internal = usize>,
     V: Ord,
-    P: Preprocess<S::External, V>,
+    T: Preprocess<P::External, V>,
 {
-    pub fn with_options(param_space: S, options: TpeCategoricalOptions<P>) -> Self {
+    pub fn with_options(param_space: P, options: TpeCategoricalOptions<T>) -> Self {
         Self {
             param_space,
             options,
@@ -70,20 +70,23 @@ where
         }
     }
 
-    pub fn param_space(&self) -> &S {
+    pub fn param_space(&self) -> &P {
         &self.param_space
     }
 }
-impl<S, V, P> Optimizer for TpeCategoricalOptimizer<S, V, P>
+impl<P, V, T> Optimizer for TpeCategoricalOptimizer<P, V, T>
 where
-    S: ParamSpace<Internal = usize>,
+    P: ParamSpace<Internal = usize>,
     V: Ord,
-    P: Preprocess<S::External, V>,
+    T: Preprocess<P::External, V>,
 {
-    type Param = S::External;
+    type Param = P::External;
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
+        // FIXME: optimize (buffer new observations in `tell` and merge them with existing ones)
+        self.observations.sort_by(|a, b| a.value.cmp(&b.value));
+
         let gamma = self
             .options
             .preprocessor
@@ -129,11 +132,7 @@ where
 
     fn tell(&mut self, param: Self::Param, value: Self::Value) {
         let o = Observation { param, value };
-        let i = self
-            .observations
-            .binary_search_by(|x| x.value.cmp(&o.value))
-            .unwrap_or_else(|i| i);
-        self.observations.insert(i, o);
+        self.observations.push(o);
     }
 }
 

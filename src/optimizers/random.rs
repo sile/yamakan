@@ -5,32 +5,32 @@ use rand::Rng;
 use std::marker::PhantomData;
 
 #[derive(Debug)]
-pub struct RandomOptimizer<S, V> {
-    param_space: S,
+pub struct RandomOptimizer<P, V> {
+    param_space: P,
     _value: PhantomData<V>,
 }
-impl<S, V> RandomOptimizer<S, V>
+impl<P, V> RandomOptimizer<P, V>
 where
-    S: ParamSpace,
-    S::Internal: SampleUniform,
+    P: ParamSpace,
+    P::Internal: SampleUniform,
 {
-    pub fn new(param_space: S) -> Self {
+    pub fn new(param_space: P) -> Self {
         Self {
             param_space,
             _value: PhantomData,
         }
     }
 
-    pub fn param_space(&self) -> &S {
+    pub fn param_space(&self) -> &P {
         &self.param_space
     }
 }
-impl<S, V> Optimizer for RandomOptimizer<S, V>
+impl<P, V> Optimizer for RandomOptimizer<P, V>
 where
-    S: ParamSpace,
-    S::Internal: SampleUniform,
+    P: ParamSpace,
+    P::Internal: SampleUniform,
 {
-    type Param = S::External;
+    type Param = P::External;
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
@@ -41,12 +41,12 @@ where
 
     fn tell(&mut self, _param: Self::Param, _value: Self::Value) {}
 }
-impl<S, V> Default for RandomOptimizer<S, V>
+impl<P, V> Default for RandomOptimizer<P, V>
 where
-    S: Default + ParamSpace,
-    S::Internal: SampleUniform,
+    P: Default + ParamSpace,
+    P::Internal: SampleUniform,
 {
     fn default() -> Self {
-        Self::new(S::default())
+        Self::new(P::default())
     }
 }

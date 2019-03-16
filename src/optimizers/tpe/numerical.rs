@@ -1,24 +1,24 @@
-use super::ParzenEstimatorBuilder;
-use super::{DefaultTpeStrategy, TpeStrategy};
+use super::{DefaultPreprocessor, ParzenEstimatorBuilder, Preprocess};
 use crate::float::NonNanF64;
 use crate::optimizer::{Observation, Optimizer};
 use crate::space::ParamSpace;
 use rand::distributions::Distribution;
 use rand::Rng;
 
-// TODO: s/P/S/
+// TODO: TpeNumericalOptions
+
 #[derive(Debug)]
-pub struct TpeNumericalOptimizer<P, V, S = DefaultTpeStrategy>
+pub struct TpeNumericalOptimizer<P, V, T = DefaultPreprocessor>
 where
     P: ParamSpace<Internal = f64>,
 {
     param_space: P,
-    strategy: S,
+    preprocessor: T,
     observations: Vec<Observation<P::External, V>>,
     estimator_builder: ParzenEstimatorBuilder,
     ei_candidates: usize,
 }
-impl<P, V> TpeNumericalOptimizer<P, V, DefaultTpeStrategy>
+impl<P, V> TpeNumericalOptimizer<P, V, DefaultPreprocessor>
 where
     P: ParamSpace<Internal = f64>,
     V: Ord,
@@ -26,35 +26,40 @@ where
     pub fn new(param_space: P) -> Self {
         Self {
             param_space,
-            strategy: DefaultTpeStrategy,
+            preprocessor: DefaultPreprocessor,
             observations: Vec::new(),
             estimator_builder: ParzenEstimatorBuilder::new(),
             ei_candidates: 24,
         }
     }
+
+    pub fn param_space(&self) -> &P {
+        &self.param_space
+    }
 }
-impl<P, V, S> Optimizer for TpeNumericalOptimizer<P, V, S>
+impl<P, V, T> Optimizer for TpeNumericalOptimizer<P, V, T>
 where
     P: ParamSpace<Internal = f64>,
     V: Ord,
-    S: TpeStrategy<P::External, V>,
+    T: Preprocess<P::External, V>,
 {
     type Param = P::External;
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
-        let gamma = self.strategy.divide_observations(&self.observations);
+        // FIXME: optimize (buffer new observations in `tell` and merge them with existing ones)
+        self.observations.sort_by(|a, b| a.value.cmp(&b.value));
+
+        let gamma = self.preprocessor.divide_observations(&self.observations);
         let (superiors, inferiors) = self.observations.split_at(gamma);
-        let superior_weights = self.strategy.weight_superiors(superiors);
-        let inferior_weights = self.strategy.weight_superiors(inferiors);
-        assert_eq!(superiors.len(), superior_weights.len());
-        assert_eq!(inferiors.len(), inferior_weights.len());
+        let superior_weights = self.preprocessor.weight_observations(superiors, true);
+        let inferior_weights = self.preprocessor.weight_observations(inferiors, false);
 
         let superior_estimator = self.estimator_builder.finish(
             superiors
                 .iter()
                 .map(|o| self.param_space.internalize(&o.param)),
-            superior_weights.into_iter(),
+            superior_weights,
             self.param_space.internal_range().start,
             self.param_space.internal_range().end,
         );
@@ -63,7 +68,7 @@ where
             inferiors
                 .iter()
                 .map(|o| self.param_space.internalize(&o.param)),
-            inferior_weights.into_iter(),
+            inferior_weights,
             self.param_space.internal_range().start,
             self.param_space.internal_range().end,
         );
@@ -84,18 +89,19 @@ where
     }
 
     fn tell(&mut self, param: Self::Param, value: Self::Value) {
-        // TODO(?): add `is_sorted` flag and do sort in `ask` if needed
-        // (e.g., `merge(existings, sort(news))`)
+        let internal_param = self.param_space.internalize(&param);
+        assert!(!internal_param.is_nan());
 
-        let x = self.param_space.internalize(&param);
-        assert!(x.is_finite(), "internal_param={}", x);
+        let r = self.param_space.internal_range();
+        assert!(
+            r.start <= internal_param && internal_param < r.end,
+            "Out of the range: internal_param={}, low={}, high={}",
+            internal_param,
+            r.start,
+            r.end
+        );
 
-        // TODO: debug assert range (low <= .. < high)
         let o = Observation { param, value };
-        let i = self
-            .observations
-            .binary_search_by(|x| x.value.cmp(&o.value))
-            .unwrap_or_else(|i| i);
-        self.observations.insert(i, o);
+        self.observations.push(o);
     }
 }
