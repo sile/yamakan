@@ -4,39 +4,14 @@ use rand::distributions::Distribution;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use std::cmp;
-use std::f64::EPSILON;
 
-// TODO: s/Builder/Options/
 #[derive(Debug)]
 pub struct ParzenEstimatorBuilder {
-    consider_prior: bool,
     prior_weight: f64,
-    consider_magic_clip: bool,
-    consider_endpoints: bool,
 }
 impl ParzenEstimatorBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn consider_prior(&mut self, flag: bool) -> &mut Self {
-        self.consider_prior = flag;
-        self
-    }
-
-    pub fn prior_weight(&mut self, weight: f64) -> &mut Self {
-        self.prior_weight = weight;
-        self
-    }
-
-    pub fn consider_magic_clip(&mut self, flag: bool) -> &mut Self {
-        self.consider_magic_clip = flag;
-        self
-    }
-
-    pub fn consider_endpoints(&mut self, flag: bool) -> &mut Self {
-        self.consider_endpoints = flag;
-        self
+    pub fn new(prior_weight: f64) -> Self {
+        Self { prior_weight }
     }
 
     pub fn finish<M, W>(&self, mus: M, weights: W, low: f64, high: f64) -> ParzenEstimator
@@ -45,23 +20,14 @@ impl ParzenEstimatorBuilder {
         W: Iterator<Item = f64>,
     {
         let mut entries = self.make_sorted_entries(mus, weights);
-
-        let prior_pos = if self.consider_prior {
-            // TODO: `|| is_empty()`
-            let prior_mu = 0.5 * (low + high);
-            let inserted_pos = self.insert_prior_entry(&mut entries, prior_mu);
-            Some(inserted_pos)
-        } else {
-            None
-        };
+        let prior_mu = 0.5 * (low + high);
+        let prior_pos = self.insert_prior_entry(&mut entries, prior_mu);
 
         self.normalize_weights(&mut entries);
 
         self.setup_sigmas(&mut entries, low, high);
-        if let Some(pos) = prior_pos {
-            let prior_sigma = high - low;
-            entries[pos].sigma = prior_sigma;
-        }
+        let prior_sigma = high - low;
+        entries[prior_pos].sigma = prior_sigma;
 
         let p_accept = entries
             .iter()
@@ -118,20 +84,14 @@ impl ParzenEstimatorBuilder {
             entries[i].sigma = float::max(curr - prev, succ - curr);
         }
 
-        if !self.consider_endpoints {
-            let n = entries.len();
-            if n >= 2 {
-                entries[0].sigma = entries[1].mu - entries[0].mu;
-                entries[n - 1].sigma = entries[n - 1].mu - entries[n - 2].mu;
-            }
+        let n = entries.len();
+        if n >= 2 {
+            entries[0].sigma = entries[1].mu - entries[0].mu;
+            entries[n - 1].sigma = entries[n - 1].mu - entries[n - 2].mu;
         }
 
         let maxsigma = high - low;
-        let minsigma = if self.consider_magic_clip {
-            (high - low) / float::min(100.0, 1.0 + (entries.len() as f64))
-        } else {
-            EPSILON
-        };
+        let minsigma = (high - low) / float::min(100.0, 1.0 + (entries.len() as f64));
         for x in entries {
             x.sigma = float::clip(minsigma, x.sigma, maxsigma);
         }
@@ -139,12 +99,7 @@ impl ParzenEstimatorBuilder {
 }
 impl Default for ParzenEstimatorBuilder {
     fn default() -> Self {
-        Self {
-            consider_prior: true,
-            prior_weight: 1.0,
-            consider_magic_clip: true,
-            consider_endpoints: false,
-        }
+        Self { prior_weight: 1.0 }
     }
 }
 
@@ -156,20 +111,23 @@ pub struct ParzenEstimator {
     p_accept: f64,
 }
 impl ParzenEstimator {
+    pub fn gmm(&self) -> Gmm {
+        Gmm { estimator: self }
+    }
+
+    #[cfg(test)]
     pub fn mus<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
         self.entries.iter().map(|x| x.mu)
     }
 
+    #[cfg(test)]
     pub fn weights<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
         self.entries.iter().map(|x| x.weight)
     }
 
+    #[cfg(test)]
     pub fn sigmas<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
         self.entries.iter().map(|x| x.sigma)
-    }
-
-    pub fn gmm(&self) -> Gmm {
-        Gmm { estimator: self }
     }
 }
 
@@ -261,7 +219,10 @@ mod tests {
     #[test]
     fn it_works1() {
         let est = estimator(&[2.4, 3.3], 0.0, 1.0);
-        assert_eq!(est.sigmas().collect::<Vec<_>>(), [1.0, 1.0, 0.25]);
+        assert_eq!(
+            est.sigmas().collect::<Vec<_>>(),
+            [1.0, 1.0, 0.8999999999999999]
+        );
         assert_eq!(est.mus().collect::<Vec<_>>(), [0.5, 2.4, 3.3]);
         assert_eq!(
             est.weights().collect::<Vec<_>>(),
@@ -274,7 +235,7 @@ mod tests {
         let est = estimator(&[3.], 0.5, 3.5);
         assert_eq!(est.weights().collect::<Vec<_>>(), [0.5, 0.5]);
         assert_eq!(est.mus().collect::<Vec<_>>(), [2.0, 3.0]);
-        assert_eq!(est.sigmas().collect::<Vec<_>>(), [3.0, 1.5]);
+        assert_eq!(est.sigmas().collect::<Vec<_>>(), [3.0, 1.0]);
     }
 
     #[test]
@@ -291,7 +252,7 @@ mod tests {
         assert_eq!(
             est.sigmas().collect::<Vec<_>>(),
             [
-                0.5,
+                0.2727272727272727,
                 1.0,
                 3.0,
                 0.2727272727272727,
@@ -300,7 +261,7 @@ mod tests {
                 1.0,
                 0.2727272727272727,
                 0.2727272727272727,
-                0.5
+                0.2727272727272727,
             ]
         );
     }
@@ -315,7 +276,7 @@ mod tests {
         );
         assert_eq!(
             est.sigmas().collect::<Vec<_>>(),
-            [1.155245300933242, 3.465735902799726]
+            [1.1688385525197538, 3.465735902799726]
         );
     }
 
@@ -360,7 +321,7 @@ mod tests {
                 0.3419976899999999,
                 0.4041698400000002,
                 0.5890592099999994,
-                0.31506690025452055
+                0.5890592099999994
             ]
         );
     }
@@ -375,7 +336,7 @@ mod tests {
         );
         assert_eq!(
             est.sigmas().collect::<Vec<_>>(),
-            [16.11809565095832, 8.05904782547916]
+            [16.11809565095832, 5.37269855031944]
         );
     }
 
@@ -418,7 +379,7 @@ mod tests {
         assert_eq!(
             est.sigmas().collect::<Vec<_>>(),
             [
-                1.4652814228143927,
+                3.801189919999999,
                 3.801189919999999,
                 3.650145479999999,
                 16.11809565095832,

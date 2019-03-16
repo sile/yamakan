@@ -1,41 +1,10 @@
-use super::{DefaultPreprocessor, Preprocess};
+use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
 use crate::optimizer::{Observation, Optimizer};
 use crate::space::ParamSpace;
-use failure::Error;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::seq::SliceRandom;
 use rand::Rng;
-
-#[derive(Debug)]
-pub struct TpeCategoricalOptions<T> {
-    preprocessor: T,
-    prior_weight: f64,
-}
-impl<T> TpeCategoricalOptions<T> {
-    pub fn new(preprocessor: T) -> Self {
-        Self {
-            preprocessor,
-            prior_weight: 1.0,
-        }
-    }
-
-    pub fn prior_weight(mut self, weight: f64) -> Result<Self, Error> {
-        ensure!(weight > 0.0, "weight={}", weight);
-        ensure!(weight.is_finite(), "weight={}", weight);
-
-        self.prior_weight = weight;
-        Ok(self)
-    }
-}
-impl<T: Default> Default for TpeCategoricalOptions<T> {
-    fn default() -> Self {
-        TpeCategoricalOptions {
-            preprocessor: T::default(),
-            prior_weight: 1.0,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct TpeCategoricalOptimizer<P, V, T = DefaultPreprocessor>
@@ -43,7 +12,7 @@ where
     P: ParamSpace<Internal = usize>,
 {
     param_space: P,
-    options: TpeCategoricalOptions<T>,
+    options: TpeOptions<T>,
     observations: Vec<Observation<P::External, V>>,
 }
 impl<P, V, T> TpeCategoricalOptimizer<P, V, T>
@@ -53,7 +22,7 @@ where
     T: Preprocess<P::External, V> + Default,
 {
     pub fn new(param_space: P) -> Self {
-        Self::with_options(param_space, TpeCategoricalOptions::default())
+        Self::with_options(param_space, TpeOptions::default())
     }
 }
 impl<P, V, T> TpeCategoricalOptimizer<P, V, T>
@@ -62,7 +31,7 @@ where
     V: Ord,
     T: Preprocess<P::External, V>,
 {
-    pub fn with_options(param_space: P, options: TpeCategoricalOptions<T>) -> Self {
+    pub fn with_options(param_space: P, options: TpeOptions<T>) -> Self {
         Self {
             param_space,
             options,

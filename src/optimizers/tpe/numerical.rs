@@ -1,11 +1,10 @@
-use super::{DefaultPreprocessor, ParzenEstimatorBuilder, Preprocess};
+use super::parzen_estimator::ParzenEstimatorBuilder;
+use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
 use crate::optimizer::{Observation, Optimizer};
 use crate::space::ParamSpace;
 use rand::distributions::Distribution;
 use rand::Rng;
-
-// TODO: TpeNumericalOptions
 
 #[derive(Debug)]
 pub struct TpeNumericalOptimizer<P, V, T = DefaultPreprocessor>
@@ -13,10 +12,9 @@ where
     P: ParamSpace<Internal = f64>,
 {
     param_space: P,
-    preprocessor: T,
+    options: TpeOptions<T>,
     observations: Vec<Observation<P::External, V>>,
     estimator_builder: ParzenEstimatorBuilder,
-    ei_candidates: usize,
 }
 impl<P, V> TpeNumericalOptimizer<P, V, DefaultPreprocessor>
 where
@@ -24,12 +22,21 @@ where
     V: Ord,
 {
     pub fn new(param_space: P) -> Self {
+        Self::with_options(param_space, TpeOptions::default())
+    }
+}
+impl<P, V, T> TpeNumericalOptimizer<P, V, T>
+where
+    P: ParamSpace<Internal = f64>,
+    V: Ord,
+    T: Preprocess<P::External, V>,
+{
+    pub fn with_options(param_space: P, options: TpeOptions<T>) -> Self {
         Self {
             param_space,
-            preprocessor: DefaultPreprocessor,
+            estimator_builder: ParzenEstimatorBuilder::new(options.prior_weight),
+            options,
             observations: Vec::new(),
-            estimator_builder: ParzenEstimatorBuilder::new(),
-            ei_candidates: 24,
         }
     }
 
@@ -50,10 +57,19 @@ where
         // FIXME: optimize (buffer new observations in `tell` and merge them with existing ones)
         self.observations.sort_by(|a, b| a.value.cmp(&b.value));
 
-        let gamma = self.preprocessor.divide_observations(&self.observations);
+        let gamma = self
+            .options
+            .preprocessor
+            .divide_observations(&self.observations);
         let (superiors, inferiors) = self.observations.split_at(gamma);
-        let superior_weights = self.preprocessor.weight_observations(superiors, true);
-        let inferior_weights = self.preprocessor.weight_observations(inferiors, false);
+        let superior_weights = self
+            .options
+            .preprocessor
+            .weight_observations(superiors, true);
+        let inferior_weights = self
+            .options
+            .preprocessor
+            .weight_observations(inferiors, false);
 
         let superior_estimator = self.estimator_builder.finish(
             superiors
@@ -76,7 +92,7 @@ where
         superior_estimator
             .gmm()
             .sample_iter(rng)
-            .take(self.ei_candidates)
+            .take(self.options.ei_candidates.get())
             .map(|candidate| {
                 let superior_log_likelihood = superior_estimator.gmm().log_pdf(candidate);
                 let inferior_log_likelihood = inferior_estimator.gmm().log_pdf(candidate);
