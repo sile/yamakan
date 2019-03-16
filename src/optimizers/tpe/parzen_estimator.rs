@@ -3,6 +3,7 @@ use rand;
 use rand::distributions::Distribution;
 use rand::seq::SliceRandom;
 use rand::Rng;
+use statrs::distribution::{Continuous, Normal, Univariate};
 use std::cmp;
 
 #[derive(Debug)]
@@ -132,7 +133,10 @@ impl ParzenEstimator {
 }
 
 fn logsumexp(xs: &[f64]) -> f64 {
-    let max_x = xs.iter().max_by_key(|&&x| NonNanF64::new(x)).expect("TODO");
+    let max_x = xs
+        .iter()
+        .max_by_key(|&&x| NonNanF64::new(x))
+        .expect("never fails");
     xs.iter().map(|&x| (x - max_x).exp()).sum::<f64>().ln() + max_x
 }
 
@@ -159,7 +163,7 @@ impl<'a> Distribution<f64> for Gmm<'a> {
                 .estimator
                 .entries
                 .choose_weighted(rng, |x| x.weight)
-                .expect("TODO");
+                .expect("never fails");
             let d = rand::distributions::Normal::new(entry.mu, entry.sigma);
             let draw = d.sample(rng);
             if self.estimator.low <= draw && draw < self.estimator.high {
@@ -170,10 +174,10 @@ impl<'a> Distribution<f64> for Gmm<'a> {
 }
 
 #[derive(Debug)]
-pub struct Entry {
-    pub mu: f64,
-    pub weight: f64,
-    pub sigma: f64, // std-dev
+struct Entry {
+    mu: f64,
+    weight: f64,
+    sigma: f64, // std-dev
 }
 impl Entry {
     fn new(mu: f64, weight: f64) -> Self {
@@ -185,13 +189,15 @@ impl Entry {
     }
 
     fn normal_cdf(&self, x: f64) -> f64 {
-        use statrs::distribution::{Normal, Univariate};
-        Normal::new(self.mu, self.sigma).expect("TODO").cdf(x)
+        Normal::new(self.mu, self.sigma)
+            .expect("never fails")
+            .cdf(x)
     }
 
     fn log_pdf(&self, x: f64) -> f64 {
-        use statrs::distribution::{Continuous, Normal};
-        Normal::new(self.mu, self.sigma).expect("TODO").ln_pdf(x)
+        Normal::new(self.mu, self.sigma)
+            .expect("never fails")
+            .ln_pdf(x)
     }
 }
 

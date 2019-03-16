@@ -7,5 +7,5 @@ publish = false
 
 [dependencies]
 failure = "0.1"
-statrs = "0.10"  # TODO: remove
+statrs = "0.10"
 rand = "0.6"
