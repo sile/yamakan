@@ -211,7 +211,7 @@ mod tests {
         let n = mus.len();
         let m = cmp::max(n, 25) - 25;
         let weights = linspace(1.0 / (n as f64), 1.0, m).chain(repeat(1.0).take(n - m));
-        ParzenEstimatorBuilder::new().finish(mus.iter().cloned(), weights, low, high)
+        ParzenEstimatorBuilder::new(1.0).finish(mus.iter().cloned(), weights, low, high)
     }
 
     #[test]
