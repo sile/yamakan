@@ -3,11 +3,22 @@ pub struct BudgetId(u64);
 
 #[derive(Debug)]
 pub struct Budget {
-    id: BudgetId,
+    // id: BudgetId,
     consumption: u64,
     amount: u64,
 }
 impl Budget {
+    pub fn new(amount: u64) -> Self {
+        Self {
+            consumption: 0,
+            amount,
+        }
+    }
+
+    pub fn consume(&mut self, n: u64) {
+        self.consumption += n;
+    }
+
     pub fn consumption(&self) -> u64 {
         self.consumption
     }
