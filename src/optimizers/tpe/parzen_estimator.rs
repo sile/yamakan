@@ -278,7 +278,7 @@ impl Entry {
             Entry::Normal { mu, sigma, .. } => {
                 Normal::new(mu, sigma).expect("never fails").ln_pdf(x)
             }
-            Entry::Uniform { low, high, .. } => (1.0 / (high - low)).ln(),
+            Entry::Uniform { low, high, .. } => 1f64.ln() - (high - low).ln(),
         }
     }
 }
