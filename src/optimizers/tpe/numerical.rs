@@ -34,7 +34,10 @@ where
     pub fn with_options(param_space: P, options: TpeOptions<T>) -> Self {
         Self {
             param_space,
-            estimator_builder: ParzenEstimatorBuilder::new(options.prior_weight),
+            estimator_builder: ParzenEstimatorBuilder::new(
+                options.prior_weight,
+                options.prior_uniform,
+            ),
             options,
             observations: Vec::new(),
         }

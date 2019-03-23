@@ -9,10 +9,14 @@ use std::cmp;
 #[derive(Debug)]
 pub struct ParzenEstimatorBuilder {
     prior_weight: f64,
+    prior_uniform: bool,
 }
 impl ParzenEstimatorBuilder {
-    pub fn new(prior_weight: f64) -> Self {
-        Self { prior_weight }
+    pub fn new(prior_weight: f64, prior_uniform: bool) -> Self {
+        Self {
+            prior_weight,
+            prior_uniform,
+        }
     }
 
     pub fn finish<M, W>(&self, mus: M, weights: W, low: f64, high: f64) -> ParzenEstimator
@@ -22,17 +26,15 @@ impl ParzenEstimatorBuilder {
     {
         let mut entries = self.make_sorted_entries(mus, weights);
         let prior_mu = 0.5 * (low + high);
-        let prior_pos = self.insert_prior_entry(&mut entries, prior_mu);
+        let prior_sigma = high - low;
+        self.insert_prior_entry(&mut entries, prior_mu, prior_sigma, low, high);
 
         self.normalize_weights(&mut entries);
-
         self.setup_sigmas(&mut entries, low, high);
-        let prior_sigma = high - low;
-        entries[prior_pos].sigma = prior_sigma;
 
         let p_accept = entries
             .iter()
-            .map(|e| (e.normal_cdf(high) - e.normal_cdf(low)) * e.weight)
+            .map(|e| (e.normal_cdf(high) - e.normal_cdf(low)) * e.weight())
             .sum::<f64>();
 
         ParzenEstimator {
@@ -50,28 +52,45 @@ impl ParzenEstimatorBuilder {
     {
         let mut entries = mus
             .zip(weights)
-            .map(|(mu, weight)| Entry::new(mu, weight))
+            .map(|(mu, weight)| Entry::new(mu, weight, 0.0, false))
             .collect::<Vec<_>>();
-        entries.sort_by_key(|x| NonNanF64::new(x.mu));
+        entries.sort_by_key(|x| NonNanF64::new(x.mu()));
         entries
     }
 
-    fn insert_prior_entry(&self, entries: &mut Vec<Entry>, prior_mu: f64) -> usize {
+    fn insert_prior_entry(
+        &self,
+        entries: &mut Vec<Entry>,
+        prior_mu: f64,
+        prior_sigma: f64,
+        low: f64,
+        high: f64,
+    ) {
         let pos = entries
             .binary_search_by(|x| {
-                NonNanF64::new(x.mu)
+                NonNanF64::new(x.mu())
                     .cmp(&NonNanF64::new(prior_mu))
                     .then(cmp::Ordering::Greater)
             })
             .unwrap_or_else(|i| i);
-        entries.insert(pos, Entry::new(prior_mu, self.prior_weight));
-        pos
+        let entry = if self.prior_uniform {
+            Entry::Uniform {
+                mu: prior_mu,
+                weight: self.prior_weight,
+                low,
+                high,
+            }
+        } else {
+            Entry::new(prior_mu, self.prior_weight, prior_sigma, true)
+        };
+        entries.insert(pos, entry);
     }
 
     fn normalize_weights(&self, entries: &mut [Entry]) {
-        let weight_sum = entries.iter().map(|x| x.weight).sum::<f64>();
+        let weight_sum = entries.iter().map(|x| x.weight()).sum::<f64>();
         for x in entries {
-            x.weight /= weight_sum;
+            let w = x.weight() / weight_sum;
+            x.set_weight(w);
         }
     }
 
@@ -79,28 +98,33 @@ impl ParzenEstimatorBuilder {
         assert!(low < high, "low={}, high={}", low, high);
 
         for i in 0..entries.len() {
-            let prev = if i == 0 { low } else { entries[i - 1].mu };
-            let curr = entries[i].mu;
-            let succ = entries.get(i + 1).map_or(high, |x| x.mu);
-            entries[i].sigma = float::max(curr - prev, succ - curr);
+            let prev = if i == 0 { low } else { entries[i - 1].mu() };
+            let curr = entries[i].mu();
+            let succ = entries.get(i + 1).map_or(high, |x| x.mu());
+            entries[i].set_sigma(float::max(curr - prev, succ - curr));
         }
 
         let n = entries.len();
         if n >= 2 {
-            entries[0].sigma = entries[1].mu - entries[0].mu;
-            entries[n - 1].sigma = entries[n - 1].mu - entries[n - 2].mu;
+            entries[0].set_sigma(entries[1].mu() - entries[0].mu());
+            entries[n - 1].set_sigma(entries[n - 1].mu() - entries[n - 2].mu());
         }
 
         let maxsigma = high - low;
         let minsigma = (high - low) / float::min(100.0, 1.0 + (entries.len() as f64));
         for x in entries {
-            x.sigma = float::clip(minsigma, x.sigma, maxsigma);
+            if let Some(sigma) = x.sigma() {
+                x.set_sigma(float::clip(minsigma, sigma, maxsigma));
+            }
         }
     }
 }
 impl Default for ParzenEstimatorBuilder {
     fn default() -> Self {
-        Self { prior_weight: 1.0 }
+        Self {
+            prior_weight: 1.0,
+            prior_uniform: false,
+        }
     }
 }
 
@@ -118,17 +142,17 @@ impl ParzenEstimator {
 
     #[cfg(test)]
     pub fn mus<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
-        self.entries.iter().map(|x| x.mu)
+        self.entries.iter().map(|x| x.mu())
     }
 
     #[cfg(test)]
     pub fn weights<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
-        self.entries.iter().map(|x| x.weight)
+        self.entries.iter().map(|x| x.weight())
     }
 
     #[cfg(test)]
     pub fn sigmas<'a>(&'a self) -> impl Iterator<Item = f64> + 'a {
-        self.entries.iter().map(|x| x.sigma)
+        self.entries.iter().map(|x| x.sigma().expect("TODO"))
     }
 }
 
@@ -150,7 +174,7 @@ impl<'a> Gmm<'a> {
         let mut xs = Vec::with_capacity(self.estimator.entries.len());
         for e in &self.estimator.entries {
             let log_density = e.log_pdf(param);
-            let x = log_density + (e.weight / self.estimator.p_accept).ln();
+            let x = log_density + (e.weight() / self.estimator.p_accept).ln();
             xs.push(x);
         }
         logsumexp(&xs)
@@ -162,42 +186,100 @@ impl<'a> Distribution<f64> for Gmm<'a> {
             let entry = self
                 .estimator
                 .entries
-                .choose_weighted(rng, |x| x.weight)
+                .choose_weighted(rng, |x| x.weight())
                 .expect("never fails");
-            let d = rand::distributions::Normal::new(entry.mu, entry.sigma);
-            let draw = d.sample(rng);
-            if self.estimator.low <= draw && draw < self.estimator.high {
-                return draw;
+            match *entry {
+                Entry::Normal { mu, sigma, .. } => {
+                    let d = rand::distributions::Normal::new(mu, sigma);
+                    let draw = d.sample(rng);
+                    if self.estimator.low <= draw && draw < self.estimator.high {
+                        return draw;
+                    }
+                }
+                Entry::Uniform { low, high, .. } => {
+                    let d = rand::distributions::Uniform::new(low, high);
+                    return d.sample(rng);
+                }
             }
         }
     }
 }
 
 #[derive(Debug)]
-struct Entry {
-    mu: f64,
-    weight: f64,
-    sigma: f64, // std-dev
+enum Entry {
+    Normal {
+        mu: f64,
+        weight: f64,
+        sigma: f64,  // std-dev
+        prior: bool, // TODO: remove
+    },
+    Uniform {
+        mu: f64, // TODO: delete
+        weight: f64,
+        low: f64,
+        high: f64,
+    },
 }
 impl Entry {
-    fn new(mu: f64, weight: f64) -> Self {
-        Entry {
+    fn new(mu: f64, weight: f64, sigma: f64, prior: bool) -> Self {
+        Entry::Normal {
             mu,
             weight,
-            sigma: 0.0,
+            sigma,
+            prior,
+        }
+    }
+
+    fn mu(&self) -> f64 {
+        match *self {
+            Entry::Normal { mu, .. } | Entry::Uniform { mu, .. } => mu,
+        }
+    }
+
+    fn weight(&self) -> f64 {
+        match *self {
+            Entry::Normal { weight, .. } | Entry::Uniform { weight, .. } => weight,
+        }
+    }
+
+    fn set_weight(&mut self, w: f64) {
+        match self {
+            Entry::Normal { weight, .. } | Entry::Uniform { weight, .. } => {
+                *weight = w;
+            }
+        }
+    }
+
+    fn sigma(&self) -> Option<f64> {
+        match *self {
+            Entry::Normal { sigma, .. } => Some(sigma),
+            _ => None,
+        }
+    }
+
+    fn set_sigma(&mut self, v: f64) {
+        match self {
+            Entry::Normal { sigma, prior, .. } if !*prior => {
+                *sigma = v;
+            }
+            _ => {}
         }
     }
 
     fn normal_cdf(&self, x: f64) -> f64 {
-        Normal::new(self.mu, self.sigma)
-            .expect("never fails")
-            .cdf(x)
+        match *self {
+            Entry::Normal { mu, sigma, .. } => Normal::new(mu, sigma).expect("never fails").cdf(x),
+            Entry::Uniform { low, high, .. } => (x - low) / (high - low),
+        }
     }
 
     fn log_pdf(&self, x: f64) -> f64 {
-        Normal::new(self.mu, self.sigma)
-            .expect("never fails")
-            .ln_pdf(x)
+        match *self {
+            Entry::Normal { mu, sigma, .. } => {
+                Normal::new(mu, sigma).expect("never fails").ln_pdf(x)
+            }
+            Entry::Uniform { low, high, .. } => (1.0 / (high - low)).ln(),
+        }
     }
 }
 
@@ -211,7 +293,7 @@ mod tests {
         let n = mus.len();
         let m = cmp::max(n, 25) - 25;
         let weights = linspace(1.0 / (n as f64), 1.0, m).chain(repeat(1.0).take(n - m));
-        ParzenEstimatorBuilder::new(1.0).finish(mus.iter().cloned(), weights, low, high)
+        ParzenEstimatorBuilder::new(1.0, false).finish(mus.iter().cloned(), weights, low, high)
     }
 
     #[test]

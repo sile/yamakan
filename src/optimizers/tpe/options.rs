@@ -6,6 +6,7 @@ pub struct TpeOptions<T> {
     pub(crate) preprocessor: T,
     pub(crate) prior_weight: f64,
     pub(crate) ei_candidates: NonZeroUsize,
+    pub(crate) prior_uniform: bool,
 }
 impl<T> TpeOptions<T> {
     pub fn new(preprocessor: T) -> Self {
@@ -13,6 +14,7 @@ impl<T> TpeOptions<T> {
             preprocessor,
             prior_weight: 1.0,
             ei_candidates: unsafe { NonZeroUsize::new_unchecked(24) },
+            prior_uniform: false,
         }
     }
 
@@ -28,6 +30,11 @@ impl<T> TpeOptions<T> {
         self.ei_candidates = n;
         self
     }
+
+    pub fn prior_uniform(mut self, b: bool) -> Self {
+        self.prior_uniform = b;
+        self
+    }
 }
 impl<T: Default> Default for TpeOptions<T> {
     fn default() -> Self {
@@ -35,6 +42,7 @@ impl<T: Default> Default for TpeOptions<T> {
             preprocessor: T::default(),
             prior_weight: 1.0,
             ei_candidates: unsafe { NonZeroUsize::new_unchecked(24) },
+            prior_uniform: false,
         }
     }
 }
