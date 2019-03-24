@@ -101,7 +101,7 @@ impl ParzenEstimatorBuilder {
 
         if self.uniform_sigma {
             assert!(!entries.is_empty());
-            let sigma = (high - low) / (entries.len() as f64);
+            let sigma = (high - low) / (2 * entries.len()) as f64;
             for e in entries {
                 e.set_sigma(sigma);
             }

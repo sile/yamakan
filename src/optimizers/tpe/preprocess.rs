@@ -12,12 +12,21 @@ pub trait Preprocess<P, V> {
     ) -> Box<dyn Iterator<Item = f64>>;
 }
 
-#[derive(Debug, Default)]
-pub struct DefaultPreprocessor;
+#[derive(Debug)]
+pub struct DefaultPreprocessor {
+    pub divide_factor: f64,
+}
+impl Default for DefaultPreprocessor {
+    fn default() -> Self {
+        Self {
+            divide_factor: 0.25,
+        }
+    }
+}
 impl<P, V> Preprocess<P, V> for DefaultPreprocessor {
     fn divide_observations(&self, observations: &[Observation<P, V>]) -> usize {
         let n = observations.len() as f64;
-        cmp::min((0.25 * n.sqrt()).ceil() as usize, 25)
+        cmp::min((self.divide_factor * n.sqrt()).ceil() as usize, 25)
     }
 
     fn weight_observations(
