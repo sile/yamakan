@@ -10,12 +10,14 @@ use std::cmp;
 pub struct ParzenEstimatorBuilder {
     prior_weight: f64,
     prior_uniform: bool,
+    uniform_sigma: bool,
 }
 impl ParzenEstimatorBuilder {
-    pub fn new(prior_weight: f64, prior_uniform: bool) -> Self {
+    pub fn new(prior_weight: f64, prior_uniform: bool, uniform_sigma: bool) -> Self {
         Self {
             prior_weight,
             prior_uniform,
+            uniform_sigma,
         }
     }
 
@@ -97,6 +99,15 @@ impl ParzenEstimatorBuilder {
     fn setup_sigmas(&self, entries: &mut [Entry], low: f64, high: f64) {
         assert!(low < high, "low={}, high={}", low, high);
 
+        if self.uniform_sigma {
+            assert!(!entries.is_empty());
+            let sigma = (high - low) / (entries.len() as f64);
+            for e in entries {
+                e.set_sigma(sigma);
+            }
+            return;
+        }
+
         for i in 0..entries.len() {
             let prev = if i == 0 { low } else { entries[i - 1].mu() };
             let curr = entries[i].mu();
@@ -124,6 +135,7 @@ impl Default for ParzenEstimatorBuilder {
         Self {
             prior_weight: 1.0,
             prior_uniform: false,
+            uniform_sigma: false,
         }
     }
 }
@@ -293,7 +305,12 @@ mod tests {
         let n = mus.len();
         let m = cmp::max(n, 25) - 25;
         let weights = linspace(1.0 / (n as f64), 1.0, m).chain(repeat(1.0).take(n - m));
-        ParzenEstimatorBuilder::new(1.0, false).finish(mus.iter().cloned(), weights, low, high)
+        ParzenEstimatorBuilder::new(1.0, false, false).finish(
+            mus.iter().cloned(),
+            weights,
+            low,
+            high,
+        )
     }
 
     #[test]

@@ -37,6 +37,7 @@ where
             estimator_builder: ParzenEstimatorBuilder::new(
                 options.prior_weight,
                 options.prior_uniform,
+                options.uniform_sigma,
             ),
             options,
             observations: Vec::new(),
