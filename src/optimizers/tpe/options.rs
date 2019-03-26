@@ -1,4 +1,4 @@
-use failure::Error;
+use crate::{Error, ErrorKind};
 use std::num::NonZeroUsize;
 
 #[derive(Debug)]
@@ -21,8 +21,8 @@ impl<T> TpeOptions<T> {
     }
 
     pub fn prior_weight(mut self, weight: f64) -> Result<Self, Error> {
-        ensure!(weight > 0.0, "weight={}", weight);
-        ensure!(weight.is_finite(), "weight={}", weight);
+        track_assert!(weight > 0.0, ErrorKind::InvalidInput; weight);
+        track_assert!(weight.is_finite(), ErrorKind::InvalidInput; weight);
 
         self.prior_weight = weight;
         Ok(self)
