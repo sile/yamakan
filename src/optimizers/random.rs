@@ -1,7 +1,6 @@
 use crate::optimizer::Optimizer;
 use crate::space::ParamSpace;
-use rand;
-use rand::distributions::Distribution;
+use rand::distributions::uniform::SampleUniform;
 use rand::Rng;
 use std::marker::PhantomData;
 
@@ -12,7 +11,8 @@ pub struct RandomOptimizer<P, V> {
 }
 impl<P, V> RandomOptimizer<P, V>
 where
-    P: ParamSpace<Internal = f64>,
+    P: ParamSpace,
+    P::Internal: SampleUniform,
 {
     pub fn new(param_space: P) -> Self {
         Self {
@@ -27,29 +27,24 @@ where
 }
 impl<P, V> Optimizer for RandomOptimizer<P, V>
 where
-    P: ParamSpace<Internal = f64>,
+    P: ParamSpace,
+    P::Internal: SampleUniform,
 {
     type Param = P::External;
     type Value = V;
 
     fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
         let r = self.param_space.internal_range();
-        let mu = 0.5 * (r.start + r.end);
-        let sigma = r.end - r.start;
-        let d = rand::distributions::Normal::new(mu, sigma);
-        loop {
-            let draw = d.sample(rng);
-            if r.start <= draw && draw < r.end {
-                return self.param_space.externalize(&draw);
-            }
-        }
+        let i = rng.gen_range(r.start, r.end);
+        self.param_space.externalize(&i)
     }
 
     fn tell(&mut self, _param: Self::Param, _value: Self::Value) {}
 }
 impl<P, V> Default for RandomOptimizer<P, V>
 where
-    P: Default + ParamSpace<Internal = f64>,
+    P: Default + ParamSpace,
+    P::Internal: SampleUniform,
 {
     fn default() -> Self {
         Self::new(P::default())
