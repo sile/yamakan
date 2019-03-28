@@ -38,6 +38,7 @@ where
                 options.prior_weight,
                 options.prior_uniform,
                 options.uniform_sigma,
+                options.uniform_weight,
             ),
             options,
             observations: Vec::new(),

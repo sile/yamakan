@@ -11,13 +11,20 @@ pub struct ParzenEstimatorBuilder {
     prior_weight: f64,
     prior_uniform: bool,
     uniform_sigma: bool,
+    uniform_weight: bool,
 }
 impl ParzenEstimatorBuilder {
-    pub fn new(prior_weight: f64, prior_uniform: bool, uniform_sigma: bool) -> Self {
+    pub fn new(
+        prior_weight: f64,
+        prior_uniform: bool,
+        uniform_sigma: bool,
+        uniform_weight: bool,
+    ) -> Self {
         Self {
             prior_weight,
             prior_uniform,
             uniform_sigma,
+            uniform_weight,
         }
     }
 
@@ -54,7 +61,10 @@ impl ParzenEstimatorBuilder {
     {
         let mut entries = mus
             .zip(weights)
-            .map(|(mu, weight)| Entry::new(mu, weight, 0.0, false))
+            .map(|(mu, weight)| {
+                let weight = if self.uniform_weight { 1.0 } else { weight };
+                Entry::new(mu, weight, 0.0, false)
+            })
             .collect::<Vec<_>>();
         entries.sort_by_key(|x| NonNanF64::new(x.mu()));
         entries
@@ -136,6 +146,7 @@ impl Default for ParzenEstimatorBuilder {
             prior_weight: 1.0,
             prior_uniform: false,
             uniform_sigma: false,
+            uniform_weight: false,
         }
     }
 }
@@ -305,7 +316,7 @@ mod tests {
         let n = mus.len();
         let m = cmp::max(n, 25) - 25;
         let weights = linspace(1.0 / (n as f64), 1.0, m).chain(repeat(1.0).take(n - m));
-        ParzenEstimatorBuilder::new(1.0, false, false).finish(
+        ParzenEstimatorBuilder::new(1.0, false, false, false).finish(
             mus.iter().cloned(),
             weights,
             low,
