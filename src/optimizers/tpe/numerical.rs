@@ -3,6 +3,7 @@ use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
 use crate::optimizer::{Observation, Optimizer};
 use crate::space::ParamSpace;
+use crate::Result;
 use rand::distributions::Distribution;
 use rand::Rng;
 
@@ -58,7 +59,7 @@ where
     type Param = P::External;
     type Value = V;
 
-    fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
+    fn ask<R: Rng>(&mut self, rng: &mut R) -> Result<Self::Param> {
         // FIXME: optimize (buffer new observations in `tell` and merge them with existing ones)
         self.observations.sort_by(|a, b| a.value.cmp(&b.value));
 
@@ -94,7 +95,7 @@ where
             self.param_space.internal_range().end,
         );
 
-        superior_estimator
+        let param = superior_estimator
             .gmm()
             .sample_iter(rng)
             .take(self.options.ei_candidates.get())
@@ -106,10 +107,11 @@ where
             })
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
             .map(|(_, internal)| self.param_space.externalize(&internal))
-            .expect("never fails")
+            .expect("never fails");
+        Ok(param)
     }
 
-    fn tell(&mut self, param: Self::Param, value: Self::Value) {
+    fn tell(&mut self, param: Self::Param, value: Self::Value) -> Result<()> {
         let internal_param = self.param_space.internalize(&param);
         assert!(!internal_param.is_nan());
 
@@ -124,5 +126,6 @@ where
 
         let o = Observation { param, value };
         self.observations.push(o);
+        Ok(())
     }
 }

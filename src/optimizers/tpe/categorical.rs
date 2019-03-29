@@ -2,6 +2,7 @@ use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
 use crate::optimizer::{Observation, Optimizer};
 use crate::space::ParamSpace;
+use crate::Result;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -52,7 +53,7 @@ where
     type Param = P::External;
     type Value = V;
 
-    fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
+    fn ask<R: Rng>(&mut self, rng: &mut R) -> Result<Self::Param> {
         // FIXME: optimize (buffer new observations in `tell` and merge them with existing ones)
         self.observations.sort_by(|a, b| a.value.cmp(&b.value));
 
@@ -85,7 +86,7 @@ where
             self.param_space.internal_range().end - self.param_space.internal_range().start;
         let mut indices = (0..space_size).collect::<Vec<_>>();
         indices.shuffle(rng);
-        indices
+        let param = indices
             .iter()
             .map(|i| self.param_space.externalize(i))
             .map(|category| {
@@ -96,12 +97,14 @@ where
             })
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
             .map(|(_, category)| category)
-            .expect("never fails")
+            .expect("never fails");
+        Ok(param)
     }
 
-    fn tell(&mut self, param: Self::Param, value: Self::Value) {
+    fn tell(&mut self, param: Self::Param, value: Self::Value) -> Result<()> {
         let o = Observation { param, value };
         self.observations.push(o);
+        Ok(())
     }
 }
 

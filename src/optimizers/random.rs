@@ -1,5 +1,6 @@
 use crate::optimizer::Optimizer;
 use crate::space::ParamSpace;
+use crate::Result;
 use rand::distributions::uniform::SampleUniform;
 use rand::Rng;
 use std::marker::PhantomData;
@@ -33,13 +34,15 @@ where
     type Param = P::External;
     type Value = V;
 
-    fn ask<R: Rng>(&mut self, rng: &mut R) -> Self::Param {
+    fn ask<R: Rng>(&mut self, rng: &mut R) -> Result<Self::Param> {
         let r = self.param_space.internal_range();
         let i = rng.gen_range(r.start, r.end);
-        self.param_space.externalize(&i)
+        Ok(self.param_space.externalize(&i))
     }
 
-    fn tell(&mut self, _param: Self::Param, _value: Self::Value) {}
+    fn tell(&mut self, _param: Self::Param, _value: Self::Value) -> Result<()> {
+        Ok(())
+    }
 }
 impl<P, V> Default for RandomOptimizer<P, V>
 where
