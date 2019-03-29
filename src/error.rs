@@ -10,7 +10,7 @@ impl From<Failure> for Error {
 }
 impl From<std::io::Error> for Error {
     fn from(f: std::io::Error) -> Self {
-        ErrorKind::Other.cause(f).into()
+        ErrorKind::IoError.cause(f).into()
     }
 }
 
