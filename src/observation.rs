@@ -33,3 +33,20 @@ impl ObservationId {
 pub trait IdGenerator {
     fn generate(&mut self) -> Result<ObservationId>;
 }
+
+#[derive(Debug, Default)]
+pub struct SerialIdGenerator {
+    next_id: u64,
+}
+impl SerialIdGenerator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+impl IdGenerator for SerialIdGenerator {
+    fn generate(&mut self) -> Result<ObservationId> {
+        let id = self.next_id;
+        self.next_id += 1;
+        Ok(ObservationId::new(id))
+    }
+}
