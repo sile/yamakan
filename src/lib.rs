@@ -2,10 +2,11 @@
 extern crate trackable;
 
 pub use self::error::{Error, ErrorKind};
-pub use self::optimizer::{Observation, Optimizer};
+pub use self::optimizer::Optimizer;
 pub use self::space::ParamSpace;
 
 pub mod budget;
+pub mod observation;
 pub mod optimizers;
 pub mod spaces;
 

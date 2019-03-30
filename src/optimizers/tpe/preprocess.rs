@@ -1,13 +1,13 @@
 use crate::iter::linspace;
-use crate::optimizer::Observation;
+use crate::observation::Observation;
 use std::cmp;
 use std::iter::repeat;
 
 pub trait Preprocess<P, V> {
-    fn divide_observations(&self, observations: &[Observation<P, V>]) -> usize;
+    fn divide_observations(&self, observations: &[&Observation<P, V>]) -> usize;
     fn weight_observations(
         &self,
-        observations: &[Observation<P, V>],
+        observations: &[&Observation<P, V>],
         is_superior: bool,
     ) -> Box<dyn Iterator<Item = f64>>;
 }
@@ -24,14 +24,14 @@ impl Default for DefaultPreprocessor {
     }
 }
 impl<P, V> Preprocess<P, V> for DefaultPreprocessor {
-    fn divide_observations(&self, observations: &[Observation<P, V>]) -> usize {
+    fn divide_observations(&self, observations: &[&Observation<P, V>]) -> usize {
         let n = observations.len() as f64;
         cmp::min((self.divide_factor * n.sqrt()).ceil() as usize, 25)
     }
 
     fn weight_observations(
         &self,
-        observations: &[Observation<P, V>],
+        observations: &[&Observation<P, V>],
         is_superior: bool,
     ) -> Box<dyn Iterator<Item = f64>> {
         let n = observations.len();

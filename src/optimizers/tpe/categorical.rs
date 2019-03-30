@@ -1,11 +1,13 @@
 use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
-use crate::optimizer::{Observation, Optimizer};
+use crate::observation::{IdGenerator, Observation, ObservationId};
+use crate::optimizer::Optimizer;
 use crate::space::ParamSpace;
 use crate::Result;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::seq::SliceRandom;
 use rand::Rng;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct TpeCategoricalOptimizer<P, V, T = DefaultPreprocessor>
@@ -14,7 +16,7 @@ where
 {
     param_space: P,
     options: TpeOptions<T>,
-    observations: Vec<Observation<P::External, V>>,
+    observations: HashMap<ObservationId, Observation<P::External, V>>,
 }
 impl<P, V, T> TpeCategoricalOptimizer<P, V, T>
 where
@@ -36,7 +38,7 @@ where
         Self {
             param_space,
             options,
-            observations: Vec::new(),
+            observations: HashMap::new(),
         }
     }
 
@@ -53,15 +55,16 @@ where
     type Param = P::External;
     type Value = V;
 
-    fn ask<R: Rng>(&mut self, rng: &mut R) -> Result<Self::Param> {
-        // FIXME: optimize (buffer new observations in `tell` and merge them with existing ones)
-        self.observations.sort_by(|a, b| a.value.cmp(&b.value));
+    fn ask<R: Rng, G: IdGenerator>(
+        &mut self,
+        rng: &mut R,
+        idgen: &mut G,
+    ) -> Result<Observation<Self::Param, ()>> {
+        let mut observations = self.observations.values().collect::<Vec<_>>();
+        observations.sort_by(|a, b| a.value.cmp(&b.value));
 
-        let gamma = self
-            .options
-            .preprocessor
-            .divide_observations(&self.observations);
-        let (superiors, inferiors) = self.observations.split_at(gamma);
+        let gamma = self.options.preprocessor.divide_observations(&observations);
+        let (superiors, inferiors) = observations.split_at(gamma);
         let superior_weights = self
             .options
             .preprocessor
@@ -98,12 +101,11 @@ where
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
             .map(|(_, category)| category)
             .expect("never fails");
-        Ok(param)
+        track!(Observation::new(idgen, param))
     }
 
-    fn tell(&mut self, param: Self::Param, value: Self::Value) -> Result<()> {
-        let o = Observation { param, value };
-        self.observations.push(o);
+    fn tell(&mut self, observation: Observation<Self::Param, Self::Value>) -> Result<()> {
+        self.observations.insert(observation.id, observation);
         Ok(())
     }
 }

@@ -1,9 +1,5 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BudgetId(u64);
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Budget {
-    // id: BudgetId,
     consumption: u64,
     amount: u64,
 }
@@ -27,19 +23,14 @@ impl Budget {
         self.amount
     }
 
-    // fn is_undigested(&self) -> bool { // This parameter is never used anymore in the future
-    // }
-
-    // fn consume()
     // fn remaining()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Budgeted<T> {
     budget: Budget,
     value: T,
 }
-
 impl<T> Budgeted<T> {
     pub fn budget(&self) -> &Budget {
         &self.budget
