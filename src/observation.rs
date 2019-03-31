@@ -16,6 +16,29 @@ impl<P> Observation<P, ()> {
         })
     }
 }
+impl<P, V> Observation<P, V> {
+    pub fn map_param<F, Q>(self, f: F) -> Observation<Q, V>
+    where
+        F: FnOnce(P) -> Q,
+    {
+        Observation {
+            id: self.id,
+            param: f(self.param),
+            value: self.value,
+        }
+    }
+
+    pub fn map_value<F, U>(self, f: F) -> Observation<P, U>
+    where
+        F: FnOnce(V) -> U,
+    {
+        Observation {
+            id: self.id,
+            param: self.param,
+            value: f(self.value),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObservationId(u64);

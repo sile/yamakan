@@ -23,20 +23,38 @@ impl Budget {
         self.amount
     }
 
-    // fn remaining()
+    pub fn set_amount(&mut self, n: u64) {
+        self.amount = n;
+    }
+
+    pub fn remaining(&self) -> u64 {
+        if self.amount < self.consumption {
+            0
+        } else {
+            self.amount - self.consumption
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Budgeted<T> {
     budget: Budget,
-    value: T,
+    inner: T,
 }
 impl<T> Budgeted<T> {
+    pub fn new(budget: Budget, inner: T) -> Self {
+        Budgeted { budget, inner }
+    }
+
     pub fn budget(&self) -> &Budget {
         &self.budget
     }
 
+    pub fn budget_mut(&mut self) -> &mut Budget {
+        &mut self.budget
+    }
+
     pub fn get(&self) -> &T {
-        &self.value
+        &self.inner
     }
 }
