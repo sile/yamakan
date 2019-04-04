@@ -214,10 +214,12 @@ impl<P, V> Rungs<P, V> {
     }
 
     fn get_mut(&mut self, i: usize) -> &mut Rung<P, V> {
-        for _ in i..=self.rungs.len() {
+        for _ in self.rungs.len()..=i {
             self.rungs.push(Rung::new());
         }
-        self.rungs.get_mut(i).expect("never fails")
+        self.rungs
+            .get_mut(i)
+            .unwrap_or_else(|| panic!("never fails"))
     }
 }
 
