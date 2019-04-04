@@ -10,16 +10,16 @@ use std::num::NonZeroUsize;
 #[derive(Debug)]
 pub struct AshaOptions {
     pub r: NonZeroUsize,
-    pub s: NonZeroUsize,
-    pub eta: usize,
+    pub s: usize,
+    pub eta: NonZeroUsize,
     pub max_suspended: NonZeroUsize,
 }
 impl Default for AshaOptions {
     fn default() -> Self {
         Self {
             r: unsafe { NonZeroUsize::new_unchecked(1) },
-            s: unsafe { NonZeroUsize::new_unchecked(4) },
-            eta: 0,
+            s: 0,
+            eta: unsafe { NonZeroUsize::new_unchecked(4) },
             max_suspended: unsafe { NonZeroUsize::new_unchecked(16) },
         }
     }
@@ -62,15 +62,19 @@ where
         &mut self.inner
     }
 
-    fn get_rung_num(&self, budget: &Budget) -> usize {
-        let c = budget.consumption();
+    fn get_rung_num(&self, c: u64) -> usize {
         let AshaOptions { r, s, eta, .. } = self.options;
-
-        let mut n = c / r.get() as u64;
-        if n >= s.get() as u64 {
-            n -= s.get() as u64;
+        let n = c / r.get() as u64;
+        if n == 0 {
+            return 0;
         }
-        (n as f64).log(eta as f64) as usize
+
+        let rung = (n as f64).log(eta.get() as f64) as usize;
+        if rung <= s {
+            0
+        } else {
+            rung - s
+        }
     }
 
     fn abandone_one(&mut self) {
@@ -122,7 +126,7 @@ where
                     .filter(|v| !v.is_suspended())
                     .filter(|v| v.value() < value)
                     .count();
-                if superiors >= rung.observations.len() / self.options.eta {
+                if superiors >= rung.observations.len() / self.options.eta.get() {
                     continue;
                 }
 
@@ -130,7 +134,8 @@ where
                     * self
                         .options
                         .eta
-                        .pow((rung_num + 1) as u32 + self.options.s.get() as u32);
+                        .get()
+                        .pow((rung_num + 1) as u32 + self.options.s as u32);
                 let mut param = param.clone();
                 param
                     .budget_mut()
@@ -152,14 +157,14 @@ where
 
         let new_obs = track!(self.inner.ask(rng, idgen))?;
         Ok(new_obs.map_param(|p| {
-            let amount = self.options.r.get() * self.options.eta.pow(self.options.s.get() as u32);
+            let amount = self.options.r.get() * self.options.eta.get().pow(self.options.s as u32);
             let budget = Budget::new(cmp::min(self.max_budget, amount as u64));
             Budgeted::new(budget, p)
         }))
     }
 
     fn tell(&mut self, observation: Observation<Self::Param, Self::Value>) -> Result<()> {
-        let rung_num = self.get_rung_num(observation.param.budget());
+        let rung_num = self.get_rung_num(observation.param.budget().consumption());
         let rung = self.rungs.get_mut(rung_num);
         if observation.param.budget().consumption() >= self.max_budget {
             let inner_observation = Observation {
@@ -214,6 +219,7 @@ impl<P, V> Rungs<P, V> {
     }
 
     fn get_mut(&mut self, i: usize) -> &mut Rung<P, V> {
+        assert!(i < 1000, "i={}", i); // TODO
         for _ in self.rungs.len()..=i {
             self.rungs.push(Rung::new());
         }
@@ -269,5 +275,48 @@ impl<T: PartialOrd> PartialOrd for RungValue<T> {
 impl<T: Ord> Ord for RungValue<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         (Reverse(self.rung_num), &self.value).cmp(&(Reverse(other.rung_num), &other.value))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::observation::SerialIdGenerator;
+    use crate::optimizers::random::RandomOptimizer;
+    use crate::spaces::F64;
+    use rand;
+    use trackable::result::TestResult;
+
+    #[test]
+    fn get_rung_num_works() {
+        let inner = RandomOptimizer::new(F64 {
+            low: 0.0,
+            high: 1.0,
+        });
+        let optimizer = AshaOptimizer::<_, usize>::new(inner, 64);
+
+        assert_eq!(optimizer.get_rung_num(0), 0);
+        assert_eq!(optimizer.get_rung_num(1), 0);
+        assert_eq!(optimizer.get_rung_num(3), 0);
+        assert_eq!(optimizer.get_rung_num(4), 1);
+        assert_eq!(optimizer.get_rung_num(15), 1);
+        assert_eq!(optimizer.get_rung_num(16), 2);
+    }
+
+    #[test]
+    fn asha_works() -> TestResult {
+        let inner = RandomOptimizer::new(F64 {
+            low: 0.0,
+            high: 1.0,
+        });
+        let mut optimizer = AshaOptimizer::<_, usize>::new(inner, 64);
+
+        let mut rng = rand::thread_rng();
+        let mut idgen = SerialIdGenerator::new();
+        let obs = track!(optimizer.ask(&mut rng, &mut idgen))?;
+        let obs = obs.map_value(|_| 1);
+        track!(optimizer.tell(obs))?;
+
+        Ok(())
     }
 }
