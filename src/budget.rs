@@ -34,6 +34,14 @@ impl Budget {
             self.amount - self.consumption
         }
     }
+
+    pub fn excess(&self) -> u64 {
+        if self.consumption > self.amount {
+            self.consumption - self.amount
+        } else {
+            0
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

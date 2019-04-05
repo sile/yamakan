@@ -62,6 +62,10 @@ where
         &mut self.inner
     }
 
+    pub fn options(&self) -> &AshaOptions {
+        &self.options
+    }
+
     fn get_rung_num(&self, c: u64) -> usize {
         let AshaOptions { r, s, eta, .. } = self.options;
         let n = c / r.get() as u64;

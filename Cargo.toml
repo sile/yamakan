@@ -16,6 +16,7 @@ travis-ci = {repository = "sile/yamakan"}
 codecov = {repository = "sile/yamakan"}
 
 [dependencies]
+factory = "0.1"
 statrs = "0.10"
 rand = "0.6"
 trackable = "0.2"
