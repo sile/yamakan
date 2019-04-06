@@ -1,7 +1,7 @@
 use super::parzen_estimator::ParzenEstimatorBuilder;
 use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
-use crate::observation::{IdGenerator, Observation, ObservationId};
+use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizer::Optimizer;
 use crate::space::ParamSpace;
 use crate::Result;
@@ -16,7 +16,7 @@ where
 {
     param_space: P,
     options: TpeOptions<T>,
-    observations: HashMap<ObservationId, Observation<P::External, V>>,
+    observations: HashMap<ObsId, Obs<P::External, V>>,
     estimator_builder: ParzenEstimatorBuilder,
 }
 impl<P, V> TpeNumericalOptimizer<P, V, DefaultPreprocessor>
@@ -61,11 +61,7 @@ where
     type Param = P::External;
     type Value = V;
 
-    fn ask<R: Rng, G: IdGenerator>(
-        &mut self,
-        rng: &mut R,
-        idgen: &mut G,
-    ) -> Result<Observation<Self::Param, ()>> {
+    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param, ()>> {
         let mut observations = self.observations.values().collect::<Vec<_>>();
         observations.sort_by(|a, b| a.value.cmp(&b.value));
 
@@ -111,10 +107,10 @@ where
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
             .map(|(_, internal)| self.param_space.externalize(&internal))
             .expect("never fails");
-        track!(Observation::new(idgen, param))
+        track!(Obs::new(idg, param))
     }
 
-    fn tell(&mut self, observation: Observation<Self::Param, Self::Value>) -> Result<()> {
+    fn tell(&mut self, observation: Obs<Self::Param, Self::Value>) -> Result<()> {
         let internal_param = self.param_space.internalize(&observation.param);
         assert!(!internal_param.is_nan());
 

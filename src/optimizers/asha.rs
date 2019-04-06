@@ -1,5 +1,5 @@
 use crate::budget::{Budget, Budgeted};
-use crate::observation::{IdGenerator, Observation, ObservationId};
+use crate::observation::{IdGen, Obs, ObsId};
 use crate::{Optimizer, Result};
 use rand::Rng;
 use std::cmp::{self, Ordering, Reverse};
@@ -108,11 +108,7 @@ where
     type Param = Budgeted<O::Param>;
     type Value = V;
 
-    fn ask<R: Rng, G: IdGenerator>(
-        &mut self,
-        rng: &mut R,
-        idgen: &mut G,
-    ) -> Result<Observation<Self::Param, ()>> {
+    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param, ()>> {
         let mut rung_num = self.rungs.rungs.len();
 
         for rung in self.rungs.rungs.iter_mut().rev() {
@@ -150,7 +146,7 @@ where
                 };
                 rung.observations.insert(id, entry);
 
-                let obs = Observation {
+                let obs = Obs {
                     id,
                     param,
                     value: (),
@@ -159,7 +155,7 @@ where
             }
         }
 
-        let new_obs = track!(self.inner.ask(rng, idgen))?;
+        let new_obs = track!(self.inner.ask(rng, idg))?;
         Ok(new_obs.map_param(|p| {
             let amount = self.options.r.get() * self.options.eta.get().pow(self.options.s as u32);
             let budget = Budget::new(cmp::min(self.max_budget, amount as u64));
@@ -167,11 +163,11 @@ where
         }))
     }
 
-    fn tell(&mut self, observation: Observation<Self::Param, Self::Value>) -> Result<()> {
+    fn tell(&mut self, observation: Obs<Self::Param, Self::Value>) -> Result<()> {
         let rung_num = self.get_rung_num(observation.param.budget().consumption());
         let rung = self.rungs.get_mut(rung_num);
         if observation.param.budget().consumption() >= self.max_budget {
-            let inner_observation = Observation {
+            let inner_observation = Obs {
                 id: observation.id,
                 param: observation.param.get().clone(),
                 value: RungValue {
@@ -191,7 +187,7 @@ where
             };
             rung.observations.insert(observation.id, entry);
 
-            let inner_observation = Observation {
+            let inner_observation = Obs {
                 id: observation.id,
                 param: observation.param.get().clone(),
                 value: RungValue {
@@ -256,7 +252,7 @@ impl<P, V> RungEntry<P, V> {
 
 #[derive(Debug)]
 struct Rung<P, V> {
-    observations: HashMap<ObservationId, RungEntry<P, V>>,
+    observations: HashMap<ObsId, RungEntry<P, V>>,
 }
 impl<P, V> Rung<P, V> {
     fn new() -> Self {
@@ -285,7 +281,7 @@ impl<T: Ord> Ord for RungValue<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::observation::SerialIdGenerator;
+    use crate::observation::SerialIdGen;
     use crate::optimizers::random::RandomOptimizer;
     use crate::spaces::F64;
     use rand;
@@ -316,8 +312,8 @@ mod tests {
         let mut optimizer = AshaOptimizer::<_, usize>::new(inner, 64);
 
         let mut rng = rand::thread_rng();
-        let mut idgen = SerialIdGenerator::new();
-        let obs = track!(optimizer.ask(&mut rng, &mut idgen))?;
+        let mut idg = SerialIdg::new();
+        let obs = track!(optimizer.ask(&mut rng, &mut idg))?;
         let obs = obs.map_value(|_| 1);
         track!(optimizer.tell(obs))?;
 

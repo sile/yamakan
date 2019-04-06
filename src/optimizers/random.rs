@@ -1,4 +1,4 @@
-use crate::observation::{IdGenerator, Observation};
+use crate::observation::{IdGen, Obs};
 use crate::optimizer::Optimizer;
 use crate::space::ParamSpace;
 use crate::Result;
@@ -35,17 +35,13 @@ where
     type Param = P::External;
     type Value = V;
 
-    fn ask<R: Rng, G: IdGenerator>(
-        &mut self,
-        rng: &mut R,
-        idgen: &mut G,
-    ) -> Result<Observation<Self::Param, ()>> {
+    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param, ()>> {
         let r = self.param_space.internal_range();
         let i = rng.gen_range(r.start, r.end);
-        track!(Observation::new(idgen, self.param_space.externalize(&i)))
+        track!(Obs::new(idg, self.param_space.externalize(&i)))
     }
 
-    fn tell(&mut self, _observation: Observation<Self::Param, Self::Value>) -> Result<()> {
+    fn tell(&mut self, _observation: Obs<Self::Param, Self::Value>) -> Result<()> {
         Ok(())
     }
 }

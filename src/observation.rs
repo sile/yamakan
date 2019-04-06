@@ -1,38 +1,39 @@
 use crate::Result;
 
+/// Observation.
 #[derive(Debug)]
-pub struct Observation<P, V> {
-    pub id: ObservationId,
+pub struct Obs<P, V = ()> {
+    pub id: ObsId,
     pub param: P,
     pub value: V,
 }
-impl<P> Observation<P, ()> {
-    pub fn new<G: IdGenerator>(idgen: &mut G, param: P) -> Result<Self> {
-        let id = track!(idgen.generate())?;
-        Ok(Observation {
+impl<P> Obs<P, ()> {
+    pub fn new<G: IdGen>(idg: &mut G, param: P) -> Result<Self> {
+        let id = track!(idg.generate())?;
+        Ok(Self {
             id,
             param,
             value: (),
         })
     }
 }
-impl<P, V> Observation<P, V> {
-    pub fn map_param<F, Q>(self, f: F) -> Observation<Q, V>
+impl<P, V> Obs<P, V> {
+    pub fn map_param<F, Q>(self, f: F) -> Obs<Q, V>
     where
         F: FnOnce(P) -> Q,
     {
-        Observation {
+        Obs {
             id: self.id,
             param: f(self.param),
             value: self.value,
         }
     }
 
-    pub fn map_value<F, U>(self, f: F) -> Observation<P, U>
+    pub fn map_value<F, U>(self, f: F) -> Obs<P, U>
     where
         F: FnOnce(V) -> U,
     {
-        Observation {
+        Obs {
             id: self.id,
             param: self.param,
             value: f(self.value),
@@ -40,9 +41,10 @@ impl<P, V> Observation<P, V> {
     }
 }
 
+/// Observation Identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ObservationId(u64);
-impl ObservationId {
+pub struct ObsId(u64);
+impl ObsId {
     pub fn new(id: u64) -> Self {
         Self(id)
     }
@@ -53,8 +55,8 @@ impl ObservationId {
 }
 
 /// Observation ID generator.
-pub trait IdGenerator {
-    fn generate(&mut self) -> Result<ObservationId>;
+pub trait IdGen {
+    fn generate(&mut self) -> Result<ObsId>;
 }
 
 #[derive(Debug, Default)]
@@ -66,10 +68,10 @@ impl SerialIdGenerator {
         Self::default()
     }
 }
-impl IdGenerator for SerialIdGenerator {
-    fn generate(&mut self) -> Result<ObservationId> {
+impl IdGen for SerialIdGenerator {
+    fn generate(&mut self) -> Result<ObsId> {
         let id = self.next_id;
         self.next_id += 1;
-        Ok(ObservationId::new(id))
+        Ok(ObsId::new(id))
     }
 }

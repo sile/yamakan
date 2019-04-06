@@ -1,4 +1,4 @@
-use crate::observation::{IdGenerator, Observation};
+use crate::observation::{IdGen, Obs};
 use crate::Result;
 use rand::Rng;
 
@@ -6,11 +6,9 @@ pub trait Optimizer {
     type Param;
     type Value;
 
-    fn ask<R: Rng, G: IdGenerator>(
-        &mut self,
-        rng: &mut R,
-        idgen: &mut G,
-    ) -> Result<Observation<Self::Param, ()>>;
+    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>>;
 
-    fn tell(&mut self, observation: Observation<Self::Param, Self::Value>) -> Result<()>;
+    fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()>;
+
+    // fn forget(&mut self, observation: ObsId) -> Result<()>;
 }

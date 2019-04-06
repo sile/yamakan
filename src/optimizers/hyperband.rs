@@ -1,5 +1,5 @@
 use crate::budget::Budgeted;
-use crate::observation::{IdGenerator, Observation, ObservationId};
+use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizers::asha::{AshaOptimizer, AshaOptions, RungValue};
 use crate::{ErrorKind, Optimizer, Result};
 use factory::Factory;
@@ -25,7 +25,7 @@ impl Default for HyperbandOptions {
 
 pub struct HyperbandOptimizer<O: Optimizer, V> {
     brackets: Vec<Bracket<O, V>>,
-    runnings: HashMap<ObservationId, usize>,
+    runnings: HashMap<ObsId, usize>,
 }
 impl<O, V> HyperbandOptimizer<O, V>
 where
@@ -77,11 +77,7 @@ where
     type Param = Budgeted<O::Param>;
     type Value = V;
 
-    fn ask<R: Rng, G: IdGenerator>(
-        &mut self,
-        rng: &mut R,
-        idgen: &mut G,
-    ) -> Result<Observation<Self::Param, ()>> {
+    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param, ()>> {
         let (i, bracket) = track_assert_some!(
             self.brackets
                 .iter_mut()
@@ -89,7 +85,7 @@ where
                 .min_by_key(|x| x.1.consumption),
             ErrorKind::Bug
         );
-        let obs = track!(bracket.asha.ask(rng, idgen))?;
+        let obs = track!(bracket.asha.ask(rng, idg))?;
         bracket.consumption += obs.param.budget().remaining();
 
         self.runnings.insert(obs.id, i);
@@ -97,7 +93,7 @@ where
         Ok(obs)
     }
 
-    fn tell(&mut self, observation: Observation<Self::Param, Self::Value>) -> Result<()> {
+    fn tell(&mut self, observation: Obs<Self::Param, Self::Value>) -> Result<()> {
         let i = track_assert_some!(
             self.runnings.remove(&observation.id),
             ErrorKind::UnknownObservation
