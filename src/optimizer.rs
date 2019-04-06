@@ -1,4 +1,4 @@
-use crate::observation::{IdGen, Obs};
+use crate::observation::{IdGen, Obs, ObsId};
 use crate::Result;
 use rand::Rng;
 
@@ -10,5 +10,5 @@ pub trait Optimizer {
 
     fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()>;
 
-    // fn forget(&mut self, observation: ObsId) -> Result<()>;
+    fn forget(&mut self, id: ObsId) -> Result<()>;
 }

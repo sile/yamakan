@@ -207,6 +207,10 @@ where
 
         Ok(())
     }
+
+    fn forget(&mut self, _id: ObsId) -> Result<()> {
+        unimplemented!()
+    }
 }
 
 #[derive(Debug)]
@@ -281,7 +285,7 @@ impl<T: Ord> Ord for RungValue<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::observation::SerialIdGen;
+    use crate::observation::SerialIdGenerator;
     use crate::optimizers::random::RandomOptimizer;
     use crate::spaces::F64;
     use rand;
@@ -312,7 +316,7 @@ mod tests {
         let mut optimizer = AshaOptimizer::<_, usize>::new(inner, 64);
 
         let mut rng = rand::thread_rng();
-        let mut idg = SerialIdg::new();
+        let mut idg = SerialIdGenerator::new();
         let obs = track!(optimizer.ask(&mut rng, &mut idg))?;
         let obs = obs.map_value(|_| 1);
         track!(optimizer.tell(obs))?;

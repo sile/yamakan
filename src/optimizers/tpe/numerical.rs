@@ -4,7 +4,7 @@ use crate::float::NonNanF64;
 use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizer::Optimizer;
 use crate::space::ParamSpace;
-use crate::Result;
+use crate::{ErrorKind, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
 use std::collections::HashMap;
@@ -124,6 +124,11 @@ where
         );
 
         self.observations.insert(observation.id, observation);
+        Ok(())
+    }
+
+    fn forget(&mut self, id: ObsId) -> Result<()> {
+        track_assert_some!(self.observations.remove(&id), ErrorKind::UnknownObservation; id);
         Ok(())
     }
 }

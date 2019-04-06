@@ -3,7 +3,7 @@ use crate::float::NonNanF64;
 use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizer::Optimizer;
 use crate::space::ParamSpace;
-use crate::Result;
+use crate::{ErrorKind, Result};
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -100,8 +100,13 @@ where
         track!(Obs::new(idg, param))
     }
 
-    fn tell(&mut self, observation: Obs<Self::Param, Self::Value>) -> Result<()> {
-        self.observations.insert(observation.id, observation);
+    fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()> {
+        self.observations.insert(obs.id, obs);
+        Ok(())
+    }
+
+    fn forget(&mut self, id: ObsId) -> Result<()> {
+        track_assert_some!(self.observations.remove(&id), ErrorKind::UnknownObservation; id);
         Ok(())
     }
 }

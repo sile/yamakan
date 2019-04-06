@@ -106,6 +106,10 @@ where
 
         Ok(())
     }
+
+    fn forget(&mut self, _id: ObsId) -> Result<()> {
+        unimplemented!()
+    }
 }
 
 struct Bracket<O: Optimizer, V> {

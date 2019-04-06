@@ -1,4 +1,4 @@
-use crate::observation::{IdGen, Obs};
+use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizer::Optimizer;
 use crate::space::ParamSpace;
 use crate::Result;
@@ -41,7 +41,11 @@ where
         track!(Obs::new(idg, self.param_space.externalize(&i)))
     }
 
-    fn tell(&mut self, _observation: Obs<Self::Param, Self::Value>) -> Result<()> {
+    fn tell(&mut self, _obs: Obs<Self::Param, Self::Value>) -> Result<()> {
+        Ok(())
+    }
+
+    fn forget(&mut self, _id: ObsId) -> Result<()> {
         Ok(())
     }
 }
