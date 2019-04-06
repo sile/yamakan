@@ -16,4 +16,5 @@ mod iter;
 mod optimizer;
 mod space;
 
+/// This crate specific `Result` type.
 pub type Result<T> = std::result::Result<T, Error>;
