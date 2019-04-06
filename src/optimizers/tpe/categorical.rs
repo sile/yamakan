@@ -3,7 +3,7 @@ use crate::float::NonNanF64;
 use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizer::Optimizer;
 use crate::space::ParamSpace;
-use crate::{ErrorKind, Result};
+use crate::Result;
 use rand::distributions::{Distribution, WeightedIndex};
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -106,7 +106,7 @@ where
     }
 
     fn forget(&mut self, id: ObsId) -> Result<()> {
-        track_assert_some!(self.observations.remove(&id), ErrorKind::UnknownObservation; id);
+        self.observations.remove(&id);
         Ok(())
     }
 }

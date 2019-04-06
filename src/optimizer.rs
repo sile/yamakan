@@ -22,15 +22,15 @@ pub trait Optimizer {
     ///
     /// # Errors
     ///
-    /// Some implementations may  return an `ErrorKind::UnknownObservation` error
-    /// if this optimizer does not known the specified observation.
+    /// Some implementations may return an `ErrorKind::UnknownObservation` error
+    /// if this optimizer does not known (or has not generated) the specified observation.
     fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()>;
 
     /// Forgets the observation associated with the given ID.
     ///
     /// # Errors
     ///
-    /// If this optimizer does not known the specified observation,
-    /// this method will return an `ErrorKind::UnknownObservation` error.
+    /// Some implementations may return an `ErrorKind::UnknownObservation` error
+    /// if this optimizer does not known (or has not generated) the specified observation.
     fn forget(&mut self, id: ObsId) -> Result<()>;
 }
