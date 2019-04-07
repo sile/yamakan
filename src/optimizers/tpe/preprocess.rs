@@ -4,9 +4,9 @@ use std::cmp;
 use std::iter::repeat;
 
 // TODO: rename
-pub trait Preprocess<P, V> {
-    fn divide_observations(&self, observations: &[&Obs<P, V>]) -> usize;
-    fn weight_observations(
+pub trait Preprocess<V> {
+    fn divide_observations<P>(&self, observations: &[&Obs<P, V>]) -> usize;
+    fn weight_observations<P>(
         &self,
         observations: &[&Obs<P, V>],
         is_superior: bool,
@@ -24,13 +24,13 @@ impl Default for DefaultPreprocessor {
         }
     }
 }
-impl<P, V> Preprocess<P, V> for DefaultPreprocessor {
-    fn divide_observations(&self, observations: &[&Obs<P, V>]) -> usize {
+impl<V> Preprocess<V> for DefaultPreprocessor {
+    fn divide_observations<P>(&self, observations: &[&Obs<P, V>]) -> usize {
         let n = observations.len() as f64;
         cmp::min((self.divide_factor * n.sqrt()).ceil() as usize, 25)
     }
 
-    fn weight_observations(
+    fn weight_observations<P>(
         &self,
         observations: &[&Obs<P, V>],
         is_superior: bool,

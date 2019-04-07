@@ -14,7 +14,7 @@ use std::collections::HashMap;
 pub struct TpeNumericalOptimizer<P: Numerical, V, T = DefaultPreprocessor> {
     param_space: P,
     options: TpeOptions<T>,
-    observations: HashMap<ObsId, Obs<P::Param, V>>,
+    observations: HashMap<ObsId, Obs<f64, V>>,
     estimator_builder: ParzenEstimatorBuilder,
 }
 impl<P, V> TpeNumericalOptimizer<P, V, DefaultPreprocessor>
@@ -31,7 +31,7 @@ impl<P, V, T> TpeNumericalOptimizer<P, V, T>
 where
     P: Numerical,
     V: Ord,
-    T: Preprocess<P::Param, V>,
+    T: Preprocess<V>,
 {
     /// Make a new `TpeNumericalOptimizer` instance with the given options.
     pub fn with_options(param_space: P, options: TpeOptions<T>) -> Self {
@@ -62,7 +62,7 @@ impl<P, V, T> Optimizer for TpeNumericalOptimizer<P, V, T>
 where
     P: Numerical,
     V: Ord,
-    T: Preprocess<P::Param, V>,
+    T: Preprocess<V>,
 {
     type Param = P::Param;
     type Value = V;
@@ -84,20 +84,20 @@ where
             .weight_observations(inferiors, false);
 
         let superior_estimator = self.estimator_builder.finish(
-            superiors.iter().map(|o| self.param_space.to_f64(&o.param)),
+            superiors.iter().map(|o| o.param),
             superior_weights,
             self.param_space.range().low,
             self.param_space.range().high,
         );
 
         let inferior_estimator = self.estimator_builder.finish(
-            inferiors.iter().map(|o| self.param_space.to_f64(&o.param)),
+            inferiors.iter().map(|o| o.param),
             inferior_weights,
             self.param_space.range().low,
             self.param_space.range().high,
         );
 
-        let param = superior_estimator
+        let (_, param) = superior_estimator
             .gmm()
             .sample_iter(rng)
             .take(self.options.ei_candidates.get())
@@ -108,12 +108,13 @@ where
                 (ei, candidate)
             })
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
-            .map(|(_, internal)| self.param_space.from_f64(internal))
             .unwrap_or_else(|| unreachable!());
+        let param = track!(self.param_space.from_f64(param))?;
         track!(Obs::new(idg, param))
     }
 
     fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()> {
+        let obs = track!(obs.try_map_param(|p| self.param_space.to_f64(&p)))?;
         self.observations.insert(obs.id, obs);
         Ok(())
     }

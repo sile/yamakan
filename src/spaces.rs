@@ -1,5 +1,5 @@
 use crate::range::Range;
-use crate::Result;
+use crate::{ErrorKind, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
 
@@ -33,17 +33,17 @@ pub trait PriorCdf: ParamSpace {
 pub trait Categorical: ParamSpace {
     fn size(&self) -> usize;
 
-    fn to_index(&self, param: &Self::Param) -> usize;
+    fn to_index(&self, param: &Self::Param) -> Result<usize>;
 
-    fn from_index(&self, index: usize) -> Self::Param;
+    fn from_index(&self, index: usize) -> Result<Self::Param>;
 }
 
 pub trait Numerical: ParamSpace {
     fn range(&self) -> Range<f64>;
 
-    fn to_f64(&self, param: &Self::Param) -> f64;
+    fn to_f64(&self, param: &Self::Param) -> Result<f64>;
 
-    fn from_f64(&self, n: f64) -> Self::Param;
+    fn from_f64(&self, n: f64) -> Result<Self::Param>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -67,12 +67,16 @@ impl Categorical for Bool {
         2
     }
 
-    fn to_index(&self, param: &Self::Param) -> usize {
-        *param as usize
+    fn to_index(&self, param: &Self::Param) -> Result<usize> {
+        Ok(*param as usize)
     }
 
-    fn from_index(&self, index: usize) -> Self::Param {
-        index != 0
+    fn from_index(&self, index: usize) -> Result<Self::Param> {
+        match index {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => track_panic!(ErrorKind::InvalidInput; index),
+        }
     }
 }
 
@@ -91,11 +95,13 @@ impl Numerical for F64 {
         self.0
     }
 
-    fn to_f64(&self, param: &Self::Param) -> f64 {
-        *param
+    fn to_f64(&self, param: &Self::Param) -> Result<f64> {
+        track_assert!(self.0.contains(param), ErrorKind::InvalidInput; param);
+        Ok(*param)
     }
 
-    fn from_f64(&self, n: f64) -> Self::Param {
-        n
+    fn from_f64(&self, n: f64) -> Result<Self::Param> {
+        track_assert!(self.0.contains(&n), ErrorKind::InvalidInput; n);
+        Ok(n)
     }
 }

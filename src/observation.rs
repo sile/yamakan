@@ -29,6 +29,18 @@ impl<P, V> Obs<P, V> {
         }
     }
 
+    pub fn try_map_param<F, Q>(self, f: F) -> Result<Obs<Q, V>>
+    where
+        F: FnOnce(P) -> Result<Q>,
+    {
+        let id = self.id;
+        Ok(Obs {
+            id: self.id,
+            param: track!(f(self.param); id)?,
+            value: self.value,
+        })
+    }
+
     pub fn map_value<F, U>(self, f: F) -> Obs<P, U>
     where
         F: FnOnce(V) -> U,

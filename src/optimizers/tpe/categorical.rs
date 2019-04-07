@@ -4,23 +4,22 @@ use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizers::Optimizer;
 use crate::spaces::{Categorical, PriorPmf};
 use crate::Result;
-use rand::distributions::{Distribution, WeightedIndex};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use std::collections::HashMap;
 
-/// TPE Optimizer for categorical parameter.
+/// TPE optimizer for categorical parameter.
 #[derive(Debug)]
-pub struct TpeCategoricalOptimizer<P: Categorical, V, T = DefaultPreprocessor> {
+pub struct TpeCategoricalOptimizer<P, V, T = DefaultPreprocessor> {
     param_space: P,
     options: TpeOptions<T>,
-    observations: HashMap<ObsId, Obs<P::Param, V>>,
+    observations: HashMap<ObsId, Obs<usize, V>>,
 }
 impl<P, V, T> TpeCategoricalOptimizer<P, V, T>
 where
     P: Categorical + PriorPmf,
     V: Ord,
-    T: Preprocess<P::Param, V> + Default,
+    T: Preprocess<V> + Default,
 {
     /// Makes a new `TpeCategoricalOptimizer` instance.
     pub fn new(param_space: P) -> Self {
@@ -31,7 +30,7 @@ impl<P, V, T> TpeCategoricalOptimizer<P, V, T>
 where
     P: Categorical + PriorPmf,
     V: Ord,
-    T: Preprocess<P::Param, V>,
+    T: Preprocess<V>,
 {
     /// Makes a new `TpeCategoricalOptimizer` instance with the given options.
     pub fn with_options(param_space: P, options: TpeOptions<T>) -> Self {
@@ -56,7 +55,7 @@ impl<P, V, T> Optimizer for TpeCategoricalOptimizer<P, V, T>
 where
     P: Categorical + PriorPmf,
     V: Ord,
-    T: Preprocess<P::Param, V>,
+    T: Preprocess<V>,
 {
     type Param = P::Param;
     type Value = V;
@@ -77,35 +76,35 @@ where
             .preprocessor
             .weight_observations(inferiors, false);
 
-        let superior_histogram = Histogram::new(
-            superiors.iter().map(|o| &o.param).zip(superior_weights),
+        let superior_histogram = track!(Histogram::new(
+            superiors.iter().map(|o| o.param).zip(superior_weights),
             &self.param_space,
             self.options.prior_weight,
-        );
-        let inferior_histogram = Histogram::new(
-            inferiors.iter().map(|o| &o.param).zip(inferior_weights),
+        ))?;
+        let inferior_histogram = track!(Histogram::new(
+            inferiors.iter().map(|o| o.param).zip(inferior_weights),
             &self.param_space,
             self.options.prior_weight,
-        );
+        ))?;
 
         let mut indices = (0..self.param_space.size()).collect::<Vec<_>>();
         indices.shuffle(rng); // for tie break
-        let param = indices
+        let (_, param) = indices
             .into_iter()
-            .map(|i| self.param_space.from_index(i))
-            .map(|param| {
-                let superior_log_likelihood = superior_histogram.pmf(&param).ln();
-                let inferior_log_likelihood = inferior_histogram.pmf(&param).ln();
+            .map(|candidate| {
+                let superior_log_likelihood = superior_histogram.pmf(candidate).ln();
+                let inferior_log_likelihood = inferior_histogram.pmf(candidate).ln();
                 let ei = superior_log_likelihood - inferior_log_likelihood;
-                (ei, param)
+                (ei, candidate)
             })
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
-            .map(|(_, param)| param)
             .unwrap_or_else(|| unreachable!());
+        let param = track!(self.param_space.from_index(param))?;
         track!(Obs::new(idg, param))
     }
 
     fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()> {
+        let obs = track!(obs.try_map_param(|p| self.param_space.to_index(&p)))?;
         self.observations.insert(obs.id, obs);
         Ok(())
     }
@@ -119,25 +118,24 @@ where
 #[derive(Debug)]
 struct Histogram<'a, P> {
     probabilities: Vec<f64>,
-    dist: WeightedIndex<f64>,
     param_space: &'a P,
 }
 impl<'a, P> Histogram<'a, P>
 where
     P: Categorical + PriorPmf,
 {
-    fn new<I>(observations: I, param_space: &'a P, prior_weight: f64) -> Self
+    fn new<I>(observations: I, param_space: &'a P, prior_weight: f64) -> Result<Self>
     where
-        I: Iterator<Item = (&'a P::Param, f64)>,
+        I: Iterator<Item = (usize, f64)>,
     {
         let mut probabilities = (0..param_space.size())
             .map(|i| {
-                let p = param_space.from_index(i);
-                param_space.pmf(&p) * prior_weight
+                let p = track!(param_space.from_index(i); i)?;
+                Ok(param_space.pmf(&p) * prior_weight)
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
         for (param, weight) in observations {
-            probabilities[param_space.to_index(param)] += weight;
+            probabilities[param] += weight;
         }
 
         let sum = probabilities.iter().sum::<f64>();
@@ -145,25 +143,14 @@ where
             *p /= sum;
         }
 
-        let dist =
-            WeightedIndex::new(probabilities.iter()).unwrap_or_else(|e| unreachable!("{}", e));
-        Self {
+        Ok(Self {
             probabilities,
-            dist,
             param_space,
-        }
+        })
     }
 
-    fn pmf(&self, param: &P::Param) -> f64 {
-        self.probabilities[self.param_space.to_index(param)]
-    }
-}
-impl<'a, P> Distribution<P::Param> for Histogram<'a, P>
-where
-    P: Categorical,
-{
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> P::Param {
-        self.param_space.from_index(self.dist.sample(rng))
+    fn pmf(&self, param: usize) -> f64 {
+        self.probabilities[param]
     }
 }
 
