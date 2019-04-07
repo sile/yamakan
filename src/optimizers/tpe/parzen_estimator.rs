@@ -28,6 +28,7 @@ impl ParzenEstimatorBuilder {
         }
     }
 
+    // TODO: s/low,high/Range/
     pub fn finish<M, W>(&self, mus: M, weights: W, low: f64, high: f64) -> ParzenEstimator
     where
         M: Iterator<Item = f64>,

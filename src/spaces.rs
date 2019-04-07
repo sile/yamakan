@@ -1,4 +1,5 @@
 use crate::range::Range;
+use crate::Result;
 use rand::distributions::Distribution;
 use rand::Rng;
 
@@ -75,8 +76,26 @@ impl Categorical for Bool {
     }
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct F64 {
-    pub low: f64,  // inclusive
-    pub high: f64, // exclusive
+#[derive(Debug, Clone, Copy)]
+pub struct F64(Range<f64>);
+impl F64 {
+    pub fn new(low: f64, high: f64) -> Result<Self> {
+        track!(Range::new(low, high).map(Self); low, high)
+    }
+}
+impl ParamSpace for F64 {
+    type Param = f64;
+}
+impl Numerical for F64 {
+    fn range(&self) -> Range<f64> {
+        self.0
+    }
+
+    fn to_f64(&self, param: &Self::Param) -> f64 {
+        *param
+    }
+
+    fn from_f64(&self, n: f64) -> Self::Param {
+        n
+    }
 }

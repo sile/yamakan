@@ -3,37 +3,37 @@ use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
 use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizers::Optimizer;
-use crate::space::ParamSpace;
+use crate::spaces::Numerical;
 use crate::Result;
 use rand::distributions::Distribution;
 use rand::Rng;
 use std::collections::HashMap;
 
+/// TPE optimizer for numerical parameter.
 #[derive(Debug)]
-pub struct TpeNumericalOptimizer<P, V, T = DefaultPreprocessor>
-where
-    P: ParamSpace<Internal = f64>,
-{
+pub struct TpeNumericalOptimizer<P: Numerical, V, T = DefaultPreprocessor> {
     param_space: P,
     options: TpeOptions<T>,
-    observations: HashMap<ObsId, Obs<P::External, V>>,
+    observations: HashMap<ObsId, Obs<P::Param, V>>,
     estimator_builder: ParzenEstimatorBuilder,
 }
 impl<P, V> TpeNumericalOptimizer<P, V, DefaultPreprocessor>
 where
-    P: ParamSpace<Internal = f64>,
+    P: Numerical,
     V: Ord,
 {
+    /// Make a new `TpeNumericalOptimizer` instance.
     pub fn new(param_space: P) -> Self {
         Self::with_options(param_space, TpeOptions::default())
     }
 }
 impl<P, V, T> TpeNumericalOptimizer<P, V, T>
 where
-    P: ParamSpace<Internal = f64>,
+    P: Numerical,
     V: Ord,
-    T: Preprocess<P::External, V>,
+    T: Preprocess<P::Param, V>,
 {
+    /// Make a new `TpeNumericalOptimizer` instance with the given options.
     pub fn with_options(param_space: P, options: TpeOptions<T>) -> Self {
         Self {
             param_space,
@@ -48,17 +48,23 @@ where
         }
     }
 
+    /// Returns a reference to the parameter space.
     pub fn param_space(&self) -> &P {
         &self.param_space
+    }
+
+    /// Returns a mutable reference to the parameter space.
+    pub fn param_space_mut(&mut self) -> &mut P {
+        &mut self.param_space
     }
 }
 impl<P, V, T> Optimizer for TpeNumericalOptimizer<P, V, T>
 where
-    P: ParamSpace<Internal = f64>,
+    P: Numerical,
     V: Ord,
-    T: Preprocess<P::External, V>,
+    T: Preprocess<P::Param, V>,
 {
-    type Param = P::External;
+    type Param = P::Param;
     type Value = V;
 
     fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param, ()>> {
@@ -67,6 +73,7 @@ where
 
         let gamma = self.options.preprocessor.divide_observations(&observations);
         let (superiors, inferiors) = observations.split_at(gamma);
+
         let superior_weights = self
             .options
             .preprocessor
@@ -77,21 +84,17 @@ where
             .weight_observations(inferiors, false);
 
         let superior_estimator = self.estimator_builder.finish(
-            superiors
-                .iter()
-                .map(|o| self.param_space.internalize(&o.param)),
+            superiors.iter().map(|o| self.param_space.to_f64(&o.param)),
             superior_weights,
-            self.param_space.range().start,
-            self.param_space.range().end,
+            self.param_space.range().low,
+            self.param_space.range().high,
         );
 
         let inferior_estimator = self.estimator_builder.finish(
-            inferiors
-                .iter()
-                .map(|o| self.param_space.internalize(&o.param)),
+            inferiors.iter().map(|o| self.param_space.to_f64(&o.param)),
             inferior_weights,
-            self.param_space.range().start,
-            self.param_space.range().end,
+            self.param_space.range().low,
+            self.param_space.range().high,
         );
 
         let param = superior_estimator
@@ -105,30 +108,43 @@ where
                 (ei, candidate)
             })
             .max_by_key(|(ei, _)| NonNanF64::new(*ei))
-            .map(|(_, internal)| self.param_space.externalize(&internal))
-            .expect("never fails");
+            .map(|(_, internal)| self.param_space.from_f64(internal))
+            .unwrap_or_else(|| unreachable!());
         track!(Obs::new(idg, param))
     }
 
-    fn tell(&mut self, observation: Obs<Self::Param, Self::Value>) -> Result<()> {
-        let internal_param = self.param_space.internalize(&observation.param);
-        assert!(!internal_param.is_nan());
-
-        let r = self.param_space.range();
-        assert!(
-            r.start <= internal_param && internal_param < r.end,
-            "Out of the range: internal_param={}, low={}, high={}",
-            internal_param,
-            r.start,
-            r.end
-        );
-
-        self.observations.insert(observation.id, observation);
+    fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()> {
+        self.observations.insert(obs.id, obs);
         Ok(())
     }
 
     fn forget(&mut self, id: ObsId) -> Result<()> {
         self.observations.remove(&id);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::observation::SerialIdGenerator;
+    use crate::spaces::F64;
+    use rand;
+    use trackable::result::TestResult;
+
+    #[test]
+    fn tpe_numerical_works() -> TestResult {
+        let param_space = track!(F64::new(0.0, 1.0))?;
+        let mut opt = TpeNumericalOptimizer::<_, usize>::new(param_space);
+        let mut rng = rand::thread_rng();
+        let mut idg = SerialIdGenerator::new();
+
+        let obs = track!(opt.ask(&mut rng, &mut idg))?;
+        track!(opt.tell(obs.map_value(|_| 10)))?;
+
+        let obs = track!(opt.ask(&mut rng, &mut idg))?;
+        track!(opt.forget(obs.id))?;
+
         Ok(())
     }
 }
