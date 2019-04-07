@@ -1,8 +1,30 @@
 use crate::ParamSpace;
+use rand::distributions::Distribution;
+use rand::Rng;
 use std::ops::Range;
+
+pub trait PriorDistribution {
+    type Param;
+    type Distribution: Distribution<Self::Param>;
+
+    fn prior(&self) -> &Self::Distribution;
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct Bool;
+impl PriorDistribution for Bool {
+    type Param = bool;
+    type Distribution = Self;
+
+    fn prior(&self) -> &Self::Distribution {
+        self
+    }
+}
+impl Distribution<bool> for Bool {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> bool {
+        rng.gen::<bool>()
+    }
+}
 impl ParamSpace for Bool {
     type External = bool;
     type Internal = usize;
