@@ -3,6 +3,7 @@ use crate::observation::Obs;
 use std::cmp;
 use std::iter::repeat;
 
+// TODO: rename
 pub trait Preprocess<P, V> {
     fn divide_observations(&self, observations: &[&Obs<P, V>]) -> usize;
     fn weight_observations(

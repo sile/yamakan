@@ -32,7 +32,7 @@ pub trait PriorCdf: ParamSpace {
 pub trait Categorical: ParamSpace {
     fn size(&self) -> usize;
 
-    fn into_index(&self, param: Self::Param) -> usize;
+    fn to_index(&self, param: &Self::Param) -> usize;
 
     fn from_index(&self, index: usize) -> Self::Param;
 }
@@ -40,12 +40,12 @@ pub trait Categorical: ParamSpace {
 pub trait Numerical: ParamSpace {
     fn range(&self) -> Range<f64>;
 
-    fn into_f64(&self, param: Self::Param) -> f64;
+    fn to_f64(&self, param: &Self::Param) -> f64;
 
     fn from_f64(&self, n: f64) -> Self::Param;
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Bool;
 impl Distribution<bool> for Bool {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> bool {
@@ -66,8 +66,8 @@ impl Categorical for Bool {
         2
     }
 
-    fn into_index(&self, param: Self::Param) -> usize {
-        param as usize
+    fn to_index(&self, param: &Self::Param) -> usize {
+        *param as usize
     }
 
     fn from_index(&self, index: usize) -> Self::Param {

@@ -2,7 +2,7 @@
 extern crate trackable;
 
 pub use self::error::{Error, ErrorKind};
-pub use self::space::ParamSpace;
+pub use self::space::ParamSpace; // TODO: delete
 
 pub mod budget;
 pub mod observation;

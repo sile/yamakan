@@ -17,7 +17,7 @@ impl Ord for NonNanF64 {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0
             .partial_cmp(&other.0)
-            .unwrap_or_else(|| panic!("never fails"))
+            .unwrap_or_else(|| unreachable!())
     }
 }
 

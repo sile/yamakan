@@ -63,7 +63,7 @@ where
 
     fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param, ()>> {
         let mut observations = self.observations.values().collect::<Vec<_>>();
-        observations.sort_by(|a, b| a.value.cmp(&b.value));
+        observations.sort_by_key(|o| &o.value);
 
         let gamma = self.options.preprocessor.divide_observations(&observations);
         let (superiors, inferiors) = observations.split_at(gamma);
