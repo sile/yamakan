@@ -3,7 +3,6 @@ use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizers::Optimizer;
 use crate::spaces::PriorDistribution;
 use crate::Result;
-use rand::distributions::Distribution;
 use rand::Rng;
 use std::marker::PhantomData;
 
@@ -45,7 +44,7 @@ where
     type Value = V;
 
     fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param, ()>> {
-        track!(Obs::new(idg, self.param_space.prior().sample(rng)))
+        track!(Obs::new(idg, self.param_space.sample(rng)))
     }
 
     fn tell(&mut self, _obs: Obs<Self::Param, Self::Value>) -> Result<()> {
