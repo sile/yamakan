@@ -1,6 +1,7 @@
 use crate::budget::{Budget, Budgeted};
 use crate::observation::{IdGen, Obs, ObsId};
-use crate::{Optimizer, Result};
+use crate::optimizers::Optimizer;
+use crate::Result;
 use rand::Rng;
 use std::cmp::{self, Ordering, Reverse};
 use std::collections::HashMap;

@@ -2,18 +2,17 @@
 extern crate trackable;
 
 pub use self::error::{Error, ErrorKind};
-pub use self::optimizer::Optimizer;
 pub use self::space::ParamSpace;
 
 pub mod budget;
 pub mod observation;
 pub mod optimizers;
+pub mod range;
 pub mod spaces;
 
 mod error;
 mod float;
 mod iter;
-mod optimizer;
 mod space;
 
 /// This crate specific `Result` type.

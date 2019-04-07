@@ -1,7 +1,8 @@
 use crate::budget::Budgeted;
 use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizers::asha::{AshaOptimizer, AshaOptions, RungValue};
-use crate::{ErrorKind, Optimizer, Result};
+use crate::optimizers::Optimizer;
+use crate::{ErrorKind, Result};
 use factory::Factory;
 use rand::Rng;
 use std::collections::HashMap;

@@ -1,7 +1,7 @@
 use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
 use crate::observation::{IdGen, Obs, ObsId};
-use crate::optimizer::Optimizer;
+use crate::optimizers::Optimizer;
 use crate::space::ParamSpace;
 use crate::Result;
 use rand::distributions::{Distribution, WeightedIndex};
@@ -81,8 +81,7 @@ where
             self.options.prior_weight,
         );
 
-        let space_size =
-            self.param_space.internal_range().end - self.param_space.internal_range().start;
+        let space_size = self.param_space.range().end - self.param_space.range().start;
         let mut indices = (0..space_size).collect::<Vec<_>>();
         indices.shuffle(rng);
         let param = indices
@@ -122,8 +121,8 @@ impl<'a, P: ParamSpace<Internal = usize>> Histogram<'a, P> {
     where
         I: Iterator<Item = (&'a P::External, f64)>,
     {
-        let low = param_space.internal_range().start;
-        let space_size = param_space.internal_range().end - low;
+        let low = param_space.range().start;
+        let space_size = param_space.range().end - low;
         let mut probabilities = vec![prior_weight; space_size];
         for (param, weight) in observations {
             probabilities[param_space.internalize(param) - low] += weight;
@@ -143,13 +142,13 @@ impl<'a, P: ParamSpace<Internal = usize>> Histogram<'a, P> {
     }
 
     fn pmf(&self, category: &P::External) -> f64 {
-        let low = self.param_space.internal_range().start;
+        let low = self.param_space.range().start;
         self.probabilities[self.param_space.internalize(category) - low]
     }
 }
 impl<'a, P: ParamSpace<Internal = usize>> Distribution<P::External> for Histogram<'a, P> {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> P::External {
-        let low = self.param_space.internal_range().start;
+        let low = self.param_space.range().start;
         self.param_space.externalize(&(self.dist.sample(rng) + low))
     }
 }

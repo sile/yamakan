@@ -2,7 +2,7 @@ use super::parzen_estimator::ParzenEstimatorBuilder;
 use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
 use crate::observation::{IdGen, Obs, ObsId};
-use crate::optimizer::Optimizer;
+use crate::optimizers::Optimizer;
 use crate::space::ParamSpace;
 use crate::Result;
 use rand::distributions::Distribution;
@@ -81,8 +81,8 @@ where
                 .iter()
                 .map(|o| self.param_space.internalize(&o.param)),
             superior_weights,
-            self.param_space.internal_range().start,
-            self.param_space.internal_range().end,
+            self.param_space.range().start,
+            self.param_space.range().end,
         );
 
         let inferior_estimator = self.estimator_builder.finish(
@@ -90,8 +90,8 @@ where
                 .iter()
                 .map(|o| self.param_space.internalize(&o.param)),
             inferior_weights,
-            self.param_space.internal_range().start,
-            self.param_space.internal_range().end,
+            self.param_space.range().start,
+            self.param_space.range().end,
         );
 
         let param = superior_estimator
@@ -114,7 +114,7 @@ where
         let internal_param = self.param_space.internalize(&observation.param);
         assert!(!internal_param.is_nan());
 
-        let r = self.param_space.internal_range();
+        let r = self.param_space.range();
         assert!(
             r.start <= internal_param && internal_param < r.end,
             "Out of the range: internal_param={}, low={}, high={}",

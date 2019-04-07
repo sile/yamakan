@@ -1,11 +1,13 @@
+//! Random optimizer.
 use crate::observation::{IdGen, Obs, ObsId};
-use crate::optimizer::Optimizer;
+use crate::optimizers::Optimizer;
 use crate::space::ParamSpace;
 use crate::Result;
 use rand::distributions::uniform::SampleUniform;
 use rand::Rng;
 use std::marker::PhantomData;
 
+/// Random optimizer.
 #[derive(Debug)]
 pub struct RandomOptimizer<P, V> {
     param_space: P,
@@ -36,7 +38,7 @@ where
     type Value = V;
 
     fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param, ()>> {
-        let r = self.param_space.internal_range();
+        let r = self.param_space.range();
         let i = rng.gen_range(r.start, r.end);
         track!(Obs::new(idg, self.param_space.externalize(&i)))
     }

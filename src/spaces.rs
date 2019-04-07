@@ -7,7 +7,7 @@ impl ParamSpace for Bool {
     type External = bool;
     type Internal = usize;
 
-    fn internal_range(&self) -> Range<Self::Internal> {
+    fn range(&self) -> Range<Self::Internal> {
         Range { start: 0, end: 2 }
     }
 
@@ -30,7 +30,7 @@ impl ParamSpace for F64 {
     type External = f64;
     type Internal = f64;
 
-    fn internal_range(&self) -> Range<Self::Internal> {
+    fn range(&self) -> Range<Self::Internal> {
         Range {
             start: self.low,
             end: self.high,
