@@ -11,6 +11,7 @@ pub trait ParamSpace {
 pub trait PriorDistribution: ParamSpace + Distribution<<Self as ParamSpace>::Param> {}
 
 pub trait PriorPmf: ParamSpace {
+    // TODO: use internal value?
     fn pmf(&self, param: &Self::Param) -> f64;
 
     fn ln_pmf(&self, param: &Self::Param) -> f64 {
@@ -18,16 +19,16 @@ pub trait PriorPmf: ParamSpace {
     }
 }
 
-pub trait PriorPdf: ParamSpace {
-    fn pdf(&self, param: &Self::Param) -> f64;
+pub trait PriorPdf: Numerical {
+    fn pdf(&self, internal: f64) -> f64;
 
-    fn ln_pdf(&self, param: &Self::Param) -> f64 {
-        self.pdf(param).ln()
+    fn ln_pdf(&self, internal: f64) -> f64 {
+        self.pdf(internal).ln()
     }
 }
 
-pub trait PriorCdf: ParamSpace {
-    fn cdf(&self, param: &Self::Param) -> f64;
+pub trait PriorCdf: Numerical {
+    fn cdf(&self, internal: f64) -> f64;
 }
 
 pub trait Categorical: ParamSpace {
@@ -50,7 +51,7 @@ pub trait Numerical: ParamSpace {
 pub struct Bool;
 impl Distribution<bool> for Bool {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> bool {
-        rng.gen::<bool>()
+        rng.gen()
     }
 }
 impl ParamSpace for Bool {
@@ -103,5 +104,31 @@ impl Numerical for F64 {
     fn from_f64(&self, n: f64) -> Result<Self::Param> {
         track_assert!(self.0.contains(&n), ErrorKind::InvalidInput; n);
         Ok(n)
+    }
+}
+impl Distribution<f64> for F64 {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
+        rng.gen_range(self.0.low, self.0.high)
+    }
+}
+impl PriorDistribution for F64 {}
+impl PriorPdf for F64 {
+    fn pdf(&self, _internal: f64) -> f64 {
+        1.0 / self.0.width()
+    }
+
+    fn ln_pdf(&self, _internal: f64) -> f64 {
+        1f64.ln() - self.0.width().ln()
+    }
+}
+impl PriorCdf for F64 {
+    fn cdf(&self, internal: f64) -> f64 {
+        if internal < self.0.low {
+            0.0
+        } else if internal >= self.0.high {
+            1.0
+        } else {
+            (internal - self.0.low) / self.0.width()
+        }
     }
 }

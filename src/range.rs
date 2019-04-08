@@ -27,3 +27,12 @@ where
         }
     }
 }
+impl Range<f64> {
+    pub fn middle(&self) -> f64 {
+        (self.low + self.high) * 0.5
+    }
+
+    pub fn width(&self) -> f64 {
+        self.high - self.low
+    }
+}

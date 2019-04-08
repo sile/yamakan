@@ -3,7 +3,7 @@ use super::{DefaultPreprocessor, Preprocess, TpeOptions};
 use crate::float::NonNanF64;
 use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizers::Optimizer;
-use crate::spaces::Numerical;
+use crate::spaces::{Numerical, PriorCdf, PriorDistribution, PriorPdf};
 use crate::Result;
 use rand::distributions::Distribution;
 use rand::Rng;
@@ -37,12 +37,7 @@ where
     pub fn with_options(param_space: P, options: TpeOptions<T>) -> Self {
         Self {
             param_space,
-            estimator_builder: ParzenEstimatorBuilder::new(
-                options.prior_weight,
-                options.prior_uniform,
-                options.uniform_sigma,
-                options.uniform_weight,
-            ),
+            estimator_builder: ParzenEstimatorBuilder::new(options.prior_weight),
             options,
             observations: HashMap::new(),
         }
@@ -60,7 +55,7 @@ where
 }
 impl<P, V, T> Optimizer for TpeNumericalOptimizer<P, V, T>
 where
-    P: Numerical,
+    P: Numerical + PriorDistribution + PriorCdf + PriorPdf,
     V: Ord,
     T: Preprocess<V>,
 {
@@ -84,17 +79,19 @@ where
             .weight_observations(inferiors, false);
 
         let superior_estimator = self.estimator_builder.finish(
+            &self.param_space,
             superiors.iter().map(|o| o.param),
             superior_weights,
-            self.param_space.range().low,
-            self.param_space.range().high,
+            self.param_space.range(),
+            &self.options.preprocessor,
         );
 
         let inferior_estimator = self.estimator_builder.finish(
+            &self.param_space,
             inferiors.iter().map(|o| o.param),
             inferior_weights,
-            self.param_space.range().low,
-            self.param_space.range().high,
+            self.param_space.range(),
+            &self.options.preprocessor,
         );
 
         let (_, param) = superior_estimator
@@ -129,6 +126,7 @@ where
 mod tests {
     use super::*;
     use crate::observation::SerialIdGenerator;
+    use crate::optimizers::Optimizer;
     use crate::spaces::F64;
     use rand;
     use trackable::result::TestResult;
