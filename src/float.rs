@@ -1,4 +1,4 @@
-use std::cmp::{self, Ordering};
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct NonNanF64(f64);
@@ -8,9 +8,9 @@ impl NonNanF64 {
         Self(x)
     }
 
-    pub fn as_f64(self) -> f64 {
-        self.0
-    }
+    // pub fn as_f64(self) -> f64 {
+    //     self.0
+    // }
 }
 impl Eq for NonNanF64 {}
 impl Ord for NonNanF64 {
@@ -21,14 +21,14 @@ impl Ord for NonNanF64 {
     }
 }
 
-pub fn max(x: f64, y: f64) -> f64 {
-    cmp::max(NonNanF64::new(x), NonNanF64::new(y)).as_f64()
-}
+// pub fn max(x: f64, y: f64) -> f64 {
+//     cmp::max(NonNanF64::new(x), NonNanF64::new(y)).as_f64()
+// }
 
-pub fn min(x: f64, y: f64) -> f64 {
-    cmp::min(NonNanF64::new(x), NonNanF64::new(y)).as_f64()
-}
+// pub fn min(x: f64, y: f64) -> f64 {
+//     cmp::min(NonNanF64::new(x), NonNanF64::new(y)).as_f64()
+// }
 
-pub fn clip(min_x: f64, x: f64, max_x: f64) -> f64 {
-    max(min(max_x, x), min_x)
-}
+// pub fn clip(min_x: f64, x: f64, max_x: f64) -> f64 {
+//     max(min(max_x, x), min_x)
+// }

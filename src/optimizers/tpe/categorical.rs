@@ -1,4 +1,4 @@
-use super::{DefaultPreprocessor, Preprocess, TpeOptions};
+use super::{CategoricalStrategy, DefaultStrategy};
 use crate::float::NonNanF64;
 use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizers::Optimizer;
@@ -10,33 +10,33 @@ use std::collections::HashMap;
 
 /// TPE optimizer for categorical parameter.
 #[derive(Debug)]
-pub struct TpeCategoricalOptimizer<P, V, T = DefaultPreprocessor> {
+pub struct TpeCategoricalOptimizer<P, V, S = DefaultStrategy> {
     param_space: P,
-    options: TpeOptions<T>,
+    strategy: S,
     observations: HashMap<ObsId, Obs<usize, V>>,
 }
-impl<P, V, T> TpeCategoricalOptimizer<P, V, T>
+impl<P, V, S> TpeCategoricalOptimizer<P, V, S>
 where
     P: Categorical + PriorPmf,
     V: Ord,
-    T: Preprocess<V> + Default,
+    S: CategoricalStrategy<V> + Default,
 {
     /// Makes a new `TpeCategoricalOptimizer` instance.
     pub fn new(param_space: P) -> Self {
-        Self::with_options(param_space, TpeOptions::default())
+        Self::with_strategy(param_space, S::default())
     }
 }
-impl<P, V, T> TpeCategoricalOptimizer<P, V, T>
+impl<P, V, S> TpeCategoricalOptimizer<P, V, S>
 where
     P: Categorical + PriorPmf,
     V: Ord,
-    T: Preprocess<V>,
+    S: CategoricalStrategy<V>,
 {
-    /// Makes a new `TpeCategoricalOptimizer` instance with the given options.
-    pub fn with_options(param_space: P, options: TpeOptions<T>) -> Self {
+    /// Makes a new `TpeCategoricalOptimizer` instance with the given strategy.
+    pub fn with_strategy(param_space: P, strategy: S) -> Self {
         Self {
             param_space,
-            options,
+            strategy,
             observations: HashMap::new(),
         }
     }
@@ -50,12 +50,22 @@ where
     pub fn param_space_mut(&mut self) -> &mut P {
         &mut self.param_space
     }
+
+    /// Returns a reference to the strategy.
+    pub fn strategy(&self) -> &S {
+        &self.strategy
+    }
+
+    /// Returns a mutable reference to the strategy.
+    pub fn strategy_mut(&mut self) -> &mut S {
+        &mut self.strategy
+    }
 }
-impl<P, V, T> Optimizer for TpeCategoricalOptimizer<P, V, T>
+impl<P, V, S> Optimizer for TpeCategoricalOptimizer<P, V, S>
 where
     P: Categorical + PriorPmf,
     V: Ord,
-    T: Preprocess<V>,
+    S: CategoricalStrategy<V>,
 {
     type Param = P::Param;
     type Value = V;
@@ -64,27 +74,21 @@ where
         let mut observations = self.observations.values().collect::<Vec<_>>();
         observations.sort_by_key(|o| &o.value);
 
-        let gamma = self.options.preprocessor.divide_observations(&observations);
+        let gamma = self.strategy.division_position(&observations);
         let (superiors, inferiors) = observations.split_at(gamma);
 
-        let superior_weights = self
-            .options
-            .preprocessor
-            .weight_observations(superiors, true);
-        let inferior_weights = self
-            .options
-            .preprocessor
-            .weight_observations(inferiors, false);
+        let superior_weights = self.strategy.superior_weights(superiors);
+        let inferior_weights = self.strategy.inferior_weights(inferiors);
 
         let superior_histogram = track!(Histogram::new(
             superiors.iter().map(|o| o.param).zip(superior_weights),
             &self.param_space,
-            self.options.prior_weight,
+            self.strategy.prior_weight(superiors)
         ))?;
         let inferior_histogram = track!(Histogram::new(
             inferiors.iter().map(|o| o.param).zip(inferior_weights),
             &self.param_space,
-            self.options.prior_weight,
+            self.strategy.prior_weight(inferiors)
         ))?;
 
         let mut indices = (0..self.param_space.size()).collect::<Vec<_>>();

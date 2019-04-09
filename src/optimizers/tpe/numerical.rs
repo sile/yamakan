@@ -1,5 +1,5 @@
 use super::parzen_estimator::ParzenEstimatorBuilder;
-use super::{DefaultPreprocessor, Preprocess, TpeOptions};
+use super::{DefaultStrategy, NumericalStrategy};
 use crate::float::NonNanF64;
 use crate::observation::{IdGen, Obs, ObsId};
 use crate::optimizers::Optimizer;
@@ -11,34 +11,33 @@ use std::collections::HashMap;
 
 /// TPE optimizer for numerical parameter.
 #[derive(Debug)]
-pub struct TpeNumericalOptimizer<P: Numerical, V, T = DefaultPreprocessor> {
+pub struct TpeNumericalOptimizer<P: Numerical, V, S = DefaultStrategy> {
     param_space: P,
-    options: TpeOptions<T>,
+    strategy: S,
     observations: HashMap<ObsId, Obs<f64, V>>,
-    estimator_builder: ParzenEstimatorBuilder,
 }
-impl<P, V> TpeNumericalOptimizer<P, V, DefaultPreprocessor>
+impl<P, V, S> TpeNumericalOptimizer<P, V, S>
 where
     P: Numerical,
     V: Ord,
+    S: NumericalStrategy<V> + Default,
 {
     /// Make a new `TpeNumericalOptimizer` instance.
     pub fn new(param_space: P) -> Self {
-        Self::with_options(param_space, TpeOptions::default())
+        Self::with_strategy(param_space, S::default())
     }
 }
-impl<P, V, T> TpeNumericalOptimizer<P, V, T>
+impl<P, V, S> TpeNumericalOptimizer<P, V, S>
 where
     P: Numerical,
     V: Ord,
-    T: Preprocess<V>,
+    S: NumericalStrategy<V>,
 {
-    /// Make a new `TpeNumericalOptimizer` instance with the given options.
-    pub fn with_options(param_space: P, options: TpeOptions<T>) -> Self {
+    /// Make a new `TpeNumericalOptimizer` instance with the given strategy.
+    pub fn with_strategy(param_space: P, strategy: S) -> Self {
         Self {
             param_space,
-            estimator_builder: ParzenEstimatorBuilder::new(options.prior_weight),
-            options,
+            strategy,
             observations: HashMap::new(),
         }
     }
@@ -53,11 +52,11 @@ where
         &mut self.param_space
     }
 }
-impl<P, V, T> Optimizer for TpeNumericalOptimizer<P, V, T>
+impl<P, V, S> Optimizer for TpeNumericalOptimizer<P, V, S>
 where
     P: Numerical + PriorDistribution + PriorCdf + PriorPdf,
     V: Ord,
-    T: Preprocess<V>,
+    S: NumericalStrategy<V>,
 {
     type Param = P::Param;
     type Value = V;
@@ -66,41 +65,27 @@ where
         let mut observations = self.observations.values().collect::<Vec<_>>();
         observations.sort_by_key(|o| &o.value);
 
-        let gamma = self.options.preprocessor.divide_observations(&observations);
+        let gamma = self.strategy.division_position(&observations);
         let (superiors, inferiors) = observations.split_at(gamma);
 
-        let superior_weights = self
-            .options
-            .preprocessor
-            .weight_observations(superiors, true);
-        let inferior_weights = self
-            .options
-            .preprocessor
-            .weight_observations(inferiors, false);
+        let superior_weights = self.strategy.superior_weights(superiors);
+        let inferior_weights = self.strategy.inferior_weights(inferiors);
 
-        let superior_estimator = self.estimator_builder.finish(
-            &self.param_space,
-            superiors.iter().map(|o| o.param),
-            superior_weights,
-            self.param_space.range(),
-            &self.options.preprocessor,
-        );
+        let prior_weight = self.strategy.prior_weight(&observations);
+        let builder = ParzenEstimatorBuilder::new(&self.param_space, &self.strategy, prior_weight);
+        let superior_estimator =
+            builder.finish(superiors.iter().map(|o| o.param), superior_weights);
 
-        let inferior_estimator = self.estimator_builder.finish(
-            &self.param_space,
-            inferiors.iter().map(|o| o.param),
-            inferior_weights,
-            self.param_space.range(),
-            &self.options.preprocessor,
-        );
+        let inferior_estimator =
+            builder.finish(inferiors.iter().map(|o| o.param), inferior_weights);
 
+        let ei_candidates = self.strategy.ei_candidates(superiors);
         let (_, param) = superior_estimator
-            .gmm()
             .sample_iter(rng)
-            .take(self.options.ei_candidates.get())
+            .take(ei_candidates.get())
             .map(|candidate| {
-                let superior_log_likelihood = superior_estimator.gmm().log_pdf(candidate);
-                let inferior_log_likelihood = inferior_estimator.gmm().log_pdf(candidate);
+                let superior_log_likelihood = superior_estimator.log_pdf(candidate);
+                let inferior_log_likelihood = inferior_estimator.log_pdf(candidate);
                 let ei = superior_log_likelihood - inferior_log_likelihood;
                 (ei, candidate)
             })
