@@ -37,10 +37,10 @@ pub struct DefaultStrategy {
 impl Default for DefaultStrategy {
     fn default() -> Self {
         Self {
-            divide_factor: 0.25,
+            divide_factor: 1.0,
             max_superiors: unsafe { NonZeroUsize::new_unchecked(25) },
             prior_weight: 1.0,
-            ei_candidates: unsafe { NonZeroUsize::new_unchecked(24) },
+            ei_candidates: unsafe { NonZeroUsize::new_unchecked(4) },
         }
     }
 }
