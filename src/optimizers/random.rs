@@ -9,6 +9,7 @@ use std::marker::PhantomData;
 /// Random optimizer.
 ///
 /// This optimizer samples parameters at random from the given prior distribution.
+// TODO: remove `V = ()`
 #[derive(Debug)]
 pub struct RandomOptimizer<P, V = ()> {
     param_space: P,
