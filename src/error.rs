@@ -16,7 +16,7 @@ impl From<std::io::Error> for Error {
 }
 
 /// Possible error kinds.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ErrorKind {
     /// Invalid input was given.
     InvalidInput,
