@@ -29,10 +29,10 @@ pub trait NumericalStrategy<V>: Strategy<f64, V> + KdeStrategy {
 // TODO: rename: s/default/built-in/ (?)
 #[derive(Debug)]
 pub struct DefaultStrategy {
-    divide_factor: f64,
-    max_superiors: NonZeroUsize,
-    prior_weight: f64,
-    ei_candidates: NonZeroUsize,
+    pub divide_factor: f64,
+    pub max_superiors: NonZeroUsize,
+    pub prior_weight: f64,
+    pub ei_candidates: NonZeroUsize,
 }
 impl Default for DefaultStrategy {
     fn default() -> Self {
