@@ -39,7 +39,7 @@ impl Default for DefaultStrategy {
         Self {
             divide_factor: 1.0,
             max_superiors: unsafe { NonZeroUsize::new_unchecked(25) },
-            prior_weight: 1.0,
+            prior_weight: 10.0,
             ei_candidates: unsafe { NonZeroUsize::new_unchecked(4) },
         }
     }
