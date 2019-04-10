@@ -63,7 +63,9 @@ where
             .collect::<Vec<_>>();
         let prior_weight = self.normalize_weights(&mut samples);
 
-        let bandwidth = self.strategy.kde_bandwidth(&samples);
+        let bandwidth = self
+            .strategy
+            .kde_bandwidth(&samples, self.param_space.range());
 
         let Range { low, high } = (*self.param_space).range(); // TODO:
 

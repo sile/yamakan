@@ -1,13 +1,13 @@
 use super::parzen_estimator::Sample;
 use crate::iter::linspace;
 use crate::observation::Obs;
+use crate::range::Range;
 use std::cmp;
-use std::f64::EPSILON;
 use std::iter::repeat;
 use std::num::NonZeroUsize;
 
 pub trait KdeStrategy {
-    fn kde_bandwidth(&self, samples: &[Sample]) -> f64;
+    fn kde_bandwidth(&self, samples: &[Sample], range: Range<f64>) -> f64;
 }
 
 pub trait Strategy<P, V> {
@@ -69,14 +69,14 @@ impl<P, V> Strategy<P, V> for DefaultStrategy {
 }
 impl<V> CategoricalStrategy<V> for DefaultStrategy {}
 impl KdeStrategy for DefaultStrategy {
-    fn kde_bandwidth(&self, samples: &[Sample]) -> f64 {
+    fn kde_bandwidth(&self, samples: &[Sample], range: Range<f64>) -> f64 {
         // TODO:
 
         // Silverman’s rule of thumb
         let n = samples.len() as f64;
         let mut sd = sd(samples.iter().map(|o| o.mu));
         if sd == 0.0 {
-            sd = EPSILON;
+            sd = range.width();
         }
         1.06 * sd * n.powf(-1.0 / 5.0)
     }
