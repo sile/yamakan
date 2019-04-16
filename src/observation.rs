@@ -87,3 +87,18 @@ impl IdGen for SerialIdGenerator {
         Ok(ObsId::new(id))
     }
 }
+
+#[derive(Debug)]
+pub struct ConstIdGenerator {
+    id: ObsId,
+}
+impl ConstIdGenerator {
+    pub fn new(id: ObsId) -> Self {
+        Self { id }
+    }
+}
+impl IdGen for ConstIdGenerator {
+    fn generate(&mut self) -> Result<ObsId> {
+        Ok(self.id)
+    }
+}
