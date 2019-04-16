@@ -1,7 +1,7 @@
 use crate::Result;
 
 /// Observation.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Obs<P, V = ()> {
     pub id: ObsId,
     pub param: P,
