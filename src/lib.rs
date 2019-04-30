@@ -6,7 +6,6 @@ pub use self::error::{Error, ErrorKind};
 pub mod budget;
 pub mod observation;
 pub mod optimizers;
-pub mod range;
 pub mod spaces;
 
 mod error;

@@ -1,7 +1,7 @@
-use crate::range::Range;
 use crate::{ErrorKind, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
+use rustats::range::Range;
 
 pub trait ParamSpace {
     type Param;
@@ -85,7 +85,8 @@ impl Categorical for Bool {
 pub struct F64(Range<f64>);
 impl F64 {
     pub fn new(low: f64, high: f64) -> Result<Self> {
-        track!(Range::new(low, high).map(Self); low, high)
+        let r = track!(Range::new(low, high); low, high)?;
+        Ok(Self(r))
     }
 }
 impl ParamSpace for F64 {
