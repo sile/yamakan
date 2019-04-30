@@ -10,7 +10,6 @@ pub mod range;
 pub mod spaces;
 
 mod error;
-mod float;
 mod iter;
 
 /// This crate specific `Result` type.
