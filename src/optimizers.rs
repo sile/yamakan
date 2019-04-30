@@ -6,7 +6,6 @@ use rand::Rng;
 pub mod asha;
 pub mod hyperband;
 pub mod random;
-pub mod tpe;
 
 /// Black-box optimizer.
 pub trait Optimizer {
