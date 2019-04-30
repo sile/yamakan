@@ -1,13 +1,20 @@
+//! Observation and its identifier.
 use crate::Result;
 
 /// Observation.
 #[derive(Debug, Clone, Copy)]
 pub struct Obs<P, V = ()> {
+    /// Observation identifier.
     pub id: ObsId,
+
+    /// Evaluation parameter.
     pub param: P,
+
+    /// Observed value.
     pub value: V,
 }
 impl<P> Obs<P, ()> {
+    /// Makes a new unevaluated observation.
     pub fn new<G: IdGen>(idg: &mut G, param: P) -> Result<Self> {
         let id = track!(idg.generate())?;
         Ok(Self {
@@ -18,6 +25,7 @@ impl<P> Obs<P, ()> {
     }
 }
 impl<P, V> Obs<P, V> {
+    /// Updates the parameter by the result of the given function.
     pub fn map_param<F, Q>(self, f: F) -> Obs<Q, V>
     where
         F: FnOnce(P) -> Q,
@@ -29,6 +37,7 @@ impl<P, V> Obs<P, V> {
         }
     }
 
+    /// Tries updating the parameter by the result of the given function.
     pub fn try_map_param<F, Q>(self, f: F) -> Result<Obs<Q, V>>
     where
         F: FnOnce(P) -> Result<Q>,
@@ -41,6 +50,7 @@ impl<P, V> Obs<P, V> {
         })
     }
 
+    /// Updates the value by the result of the given function.
     pub fn map_value<F, U>(self, f: F) -> Obs<P, U>
     where
         F: FnOnce(V) -> U,
@@ -57,27 +67,32 @@ impl<P, V> Obs<P, V> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObsId(u64);
 impl ObsId {
-    pub fn new(id: u64) -> Self {
+    /// Makes a new observation identifier.
+    pub const fn new(id: u64) -> Self {
         Self(id)
     }
 
-    pub fn get(self) -> u64 {
+    /// Returns the value of this identifier.
+    pub const fn get(self) -> u64 {
         self.0
     }
 }
 
 /// Observation ID generator.
 pub trait IdGen {
+    /// Generates a new identifier.
     fn generate(&mut self) -> Result<ObsId>;
 }
 
+/// An implementation of `IdGen` that generates serial identifiers starting from zero.
 #[derive(Debug, Default)]
 pub struct SerialIdGenerator {
     next_id: u64,
 }
 impl SerialIdGenerator {
-    pub fn new() -> Self {
-        Self::default()
+    /// Makes a new `SerialIdGenerator` instance.
+    pub const fn new() -> Self {
+        Self { next_id: 0 }
     }
 }
 impl IdGen for SerialIdGenerator {
@@ -88,12 +103,16 @@ impl IdGen for SerialIdGenerator {
     }
 }
 
+/// An implementation of `IdGen` that always returns the same identifier.
 #[derive(Debug)]
 pub struct ConstIdGenerator {
     id: ObsId,
 }
 impl ConstIdGenerator {
-    pub fn new(id: ObsId) -> Self {
+    /// Makes a new `ConstIdGenerator` instance.
+    ///
+    /// When `ConstIdGenerator::generate` method is called, it always returns the given identifier.
+    pub const fn new(id: ObsId) -> Self {
         Self { id }
     }
 }
