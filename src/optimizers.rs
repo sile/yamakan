@@ -5,7 +5,6 @@ use rand::Rng;
 
 pub mod asha;
 pub mod hyperband;
-pub mod knn;
 pub mod random;
 pub mod tpe;
 
