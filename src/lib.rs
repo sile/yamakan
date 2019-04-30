@@ -10,7 +10,6 @@ pub mod range;
 pub mod spaces;
 
 mod error;
-mod iter;
 
 /// This crate specific `Result` type.
 pub type Result<T> = std::result::Result<T, Error>;
