@@ -1,3 +1,4 @@
+use rustats;
 use trackable::error::{ErrorKind as TrackableErrorKind, ErrorKindExt};
 use trackable::error::{Failure, TrackableError};
 
@@ -12,6 +13,17 @@ impl From<Failure> for Error {
 impl From<std::io::Error> for Error {
     fn from(f: std::io::Error) -> Self {
         ErrorKind::IoError.cause(f).into()
+    }
+}
+impl From<rustats::Error> for Error {
+    fn from(f: rustats::Error) -> Self {
+        let kind = match f.kind() {
+            rustats::ErrorKind::InvalidInput => ErrorKind::InvalidInput,
+            rustats::ErrorKind::Bug => ErrorKind::Bug,
+            rustats::ErrorKind::IoError => ErrorKind::IoError,
+            rustats::ErrorKind::Other => ErrorKind::Other,
+        };
+        kind.takes_over(f).into()
     }
 }
 
