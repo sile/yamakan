@@ -1,35 +1,17 @@
+//! Parameter spaces.
 use crate::{ErrorKind, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
 use rustats::range::Range;
 
+/// Parameter space definition.
 pub trait ParamSpace {
+    /// Concrete parameter type.
     type Param;
 }
 
 /// This trait allows for sampling a parameter from the prior distribution of a parameter space.
 pub trait PriorDistribution: ParamSpace + Distribution<<Self as ParamSpace>::Param> {}
-
-pub trait PriorPmf: ParamSpace {
-    // TODO: use internal value?
-    fn pmf(&self, param: &Self::Param) -> f64;
-
-    fn ln_pmf(&self, param: &Self::Param) -> f64 {
-        self.pmf(param).ln()
-    }
-}
-
-pub trait PriorPdf: Numerical {
-    fn pdf(&self, internal: f64) -> f64;
-
-    fn ln_pdf(&self, internal: f64) -> f64 {
-        self.pdf(internal).ln()
-    }
-}
-
-pub trait PriorCdf: Numerical {
-    fn cdf(&self, internal: f64) -> f64;
-}
 
 pub trait Categorical: ParamSpace {
     fn size(&self) -> usize;
@@ -39,7 +21,15 @@ pub trait Categorical: ParamSpace {
     fn from_index(&self, index: usize) -> Result<Self::Param>;
 }
 
-pub trait Numerical: ParamSpace {
+pub trait Discrete: ParamSpace {
+    fn range(&self) -> Range<u64>;
+
+    // fn to_f64(&self, param: &Self::Param) -> Result<f64>;
+
+    // fn from_f64(&self, n: f64) -> Result<Self::Param>;
+}
+
+pub trait Continuous: ParamSpace {
     fn range(&self) -> Range<f64>;
 
     fn to_f64(&self, param: &Self::Param) -> Result<f64>;
@@ -47,21 +37,11 @@ pub trait Numerical: ParamSpace {
     fn from_f64(&self, n: f64) -> Result<Self::Param>;
 }
 
+/// Boolean parameter space.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Bool;
-impl Distribution<bool> for Bool {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> bool {
-        rng.gen()
-    }
-}
 impl ParamSpace for Bool {
     type Param = bool;
-}
-impl PriorDistribution for Bool {}
-impl PriorPmf for Bool {
-    fn pmf(&self, _param: &Self::Param) -> f64 {
-        0.5
-    }
 }
 impl Categorical for Bool {
     fn size(&self) -> usize {
@@ -80,7 +60,14 @@ impl Categorical for Bool {
         }
     }
 }
+impl Distribution<bool> for Bool {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> bool {
+        rng.gen()
+    }
+}
+impl PriorDistribution for Bool {}
 
+/// 64-bit floating point number parameter space.
 #[derive(Debug, Clone, Copy)]
 pub struct F64(Range<f64>);
 impl F64 {
@@ -92,7 +79,7 @@ impl F64 {
 impl ParamSpace for F64 {
     type Param = f64;
 }
-impl Numerical for F64 {
+impl Continuous for F64 {
     fn range(&self) -> Range<f64> {
         self.0
     }
@@ -113,23 +100,3 @@ impl Distribution<f64> for F64 {
     }
 }
 impl PriorDistribution for F64 {}
-impl PriorPdf for F64 {
-    fn pdf(&self, _internal: f64) -> f64 {
-        1.0 / self.0.width()
-    }
-
-    fn ln_pdf(&self, _internal: f64) -> f64 {
-        1f64.ln() - self.0.width().ln()
-    }
-}
-impl PriorCdf for F64 {
-    fn cdf(&self, internal: f64) -> f64 {
-        if internal < self.0.low {
-            0.0
-        } else if internal >= self.0.high {
-            1.0
-        } else {
-            (internal - self.0.low) / self.0.width()
-        }
-    }
-}
