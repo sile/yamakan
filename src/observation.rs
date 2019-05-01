@@ -1,5 +1,6 @@
 //! Observation and its identifier.
 use crate::Result;
+use std;
 
 /// Observation.
 #[derive(Debug, Clone, Copy)]
@@ -38,14 +39,13 @@ impl<P, V> Obs<P, V> {
     }
 
     /// Tries updating the parameter by the result of the given function.
-    pub fn try_map_param<F, Q>(self, f: F) -> Result<Obs<Q, V>>
+    pub fn try_map_param<F, Q, E>(self, f: F) -> std::result::Result<Obs<Q, V>, E>
     where
-        F: FnOnce(P) -> Result<Q>,
+        F: FnOnce(P) -> std::result::Result<Q, E>,
     {
-        let id = self.id;
         Ok(Obs {
-            id,
-            param: track!(f(self.param); id)?,
+            id: self.id,
+            param: f(self.param)?,
             value: self.value,
         })
     }
@@ -63,15 +63,14 @@ impl<P, V> Obs<P, V> {
     }
 
     /// Tries updating the value by the result of the given function.
-    pub fn try_map_value<F, U>(self, f: F) -> Result<Obs<P, U>>
+    pub fn try_map_value<F, U, E>(self, f: F) -> std::result::Result<Obs<P, U>, E>
     where
-        F: FnOnce(V) -> Result<U>,
+        F: FnOnce(V) -> std::result::Result<U, E>,
     {
-        let id = self.id;
         Ok(Obs {
-            id,
+            id: self.id,
             param: self.param,
-            value: track!(f(self.value); id)?,
+            value: f(self.value)?,
         })
     }
 }
