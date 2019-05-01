@@ -44,7 +44,7 @@ impl<P, V> Obs<P, V> {
     {
         let id = self.id;
         Ok(Obs {
-            id: self.id,
+            id,
             param: track!(f(self.param); id)?,
             value: self.value,
         })
@@ -60,6 +60,19 @@ impl<P, V> Obs<P, V> {
             param: self.param,
             value: f(self.value),
         }
+    }
+
+    /// Tries updating the value by the result of the given function.
+    pub fn try_map_value<F, U>(self, f: F) -> Result<Obs<P, U>>
+    where
+        F: FnOnce(V) -> Result<U>,
+    {
+        let id = self.id;
+        Ok(Obs {
+            id,
+            param: self.param,
+            value: track!(f(self.value); id)?,
+        })
     }
 }
 
