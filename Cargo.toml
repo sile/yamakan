@@ -1,6 +1,6 @@
 [package]
 name = "yamakan"
-version = "0.0.11"
+version = "0.0.12"
 authors = ["Takeru Ohta <phjgt308@gmail.com>"]
 edition = "2018"
 description = "A collection of Black-Box Optimization algorithms"
@@ -17,7 +17,6 @@ codecov = {repository = "sile/yamakan"}
 
 [dependencies]
 factory = "0.1"
-rustats = "0.0"
-statrs = "0.10"
 rand = "0.6"
+rustats = "0.0"
 trackable = "0.2"
