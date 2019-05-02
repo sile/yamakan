@@ -87,7 +87,9 @@ where
             ErrorKind::Bug
         );
         let obs = track!(bracket.asha.ask(rng, idg))?;
-        bracket.consumption += obs.param.budget().remaining();
+        if obs.param.budget().remaining() > 0 {
+            bracket.consumption += obs.param.budget().remaining() as u64;
+        }
 
         self.runnings.insert(obs.id, i);
 
@@ -101,8 +103,11 @@ where
         );
 
         let bracket = &mut self.brackets[i];
-        bracket.consumption -= observation.param.budget().remaining();
-        bracket.consumption += observation.param.budget().excess();
+        if observation.param.budget().remaining() >= 0 {
+            bracket.consumption += observation.param.budget().remaining() as u64;
+        } else {
+            bracket.consumption -= observation.param.budget().remaining().abs() as u64;
+        }
         track!(bracket.asha.tell(observation))?;
 
         Ok(())

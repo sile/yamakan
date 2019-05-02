@@ -1,3 +1,6 @@
+//! A collection of Black-Box Optimization algorithms.
+//!
+//! "yamakan" is a Japanese translation of "guesswork".
 #[macro_use]
 extern crate trackable;
 
