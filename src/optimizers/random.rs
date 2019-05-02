@@ -1,8 +1,7 @@
 //! Random optimizer.
 use crate::observation::{IdGen, Obs, ObsId};
-use crate::optimizers::Optimizer;
 use crate::parameters::PriorDistribution;
-use crate::Result;
+use crate::{Optimizer, Result};
 use rand::Rng;
 use std::marker::PhantomData;
 
