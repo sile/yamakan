@@ -1,36 +1,58 @@
 //! Budget for evaluating parameters.
+use crate::{ErrorKind, Result};
+use std;
 use std::cmp::{Ordering, Reverse};
 
 /// Budget.
 #[derive(Debug, Clone, Copy)]
 pub struct Budget {
     consumption: u64,
-    amount: u64,
+    soft_limit: u64,
+    hard_limit: u64,
 }
 impl Budget {
-    /// Makes a new `Budget` instance which has the given amount of budget.
-    pub const fn new(amount: u64) -> Self {
+    /// Makes a new `Budget` instance which has the given amount (limit) of budget.
+    pub const fn new(limit: u64) -> Self {
         Self {
             consumption: 0,
-            amount,
+            soft_limit: limit,
+            hard_limit: limit,
         }
     }
 
-    /// Returns the total amount of this budget.
-    pub const fn amount(&self) -> u64 {
-        self.amount
+    /// Returns the hard limit of this budget.
+    pub const fn hard_limit(&self) -> u64 {
+        self.hard_limit
     }
 
-    /// Sets the total amount of this budget.
-    pub fn set_amount(&mut self, amount: u64) {
-        self.amount = amount;
+    /// Returns the soft limit of this budget.
+    pub const fn soft_limit(&self) -> u64 {
+        self.soft_limit
+    }
+
+    /// Sets the soft limit of this budget.
+    ///
+    /// # Errors
+    ///
+    /// If `limit` exceeded the hard limit of this budget, an `ErrorKind::InvalidInput` error will be returned.
+    pub fn set_soft_limit(&mut self, limit: u64) -> Result<()> {
+        track_assert!(limit <= self.hard_limit, ErrorKind::InvalidInput; limit, self.hard_limit);
+        self.soft_limit = limit;
+        Ok(())
     }
 
     /// Consumes the given amount of this budget.
     ///
-    /// Note that it is allowed to consume over the total amount of the budget.
-    pub fn consume(&mut self, amount: u64) {
+    /// # Errors
+    ///
+    /// If the hard limit of the budget is exceeded, an `ErrorKind::InvalidInput` error will be returned.
+    ///
+    /// Note that it is allowed to consume over the soft limit of the budget.
+    pub fn consume(&mut self, amount: u64) -> Result<()> {
+        track_assert!(self.consumption + amount <= self.hard_limit, ErrorKind::InvalidInput;
+                      self.consumption, amount, self.hard_limit);
         self.consumption += amount;
+        Ok(())
     }
 
     /// Returns the total consumption of this budget.
@@ -38,9 +60,22 @@ impl Budget {
         self.consumption
     }
 
-    /// Returns the remaining amount of this budget.
-    pub const fn remaining(&self) -> i64 {
-        self.amount as i64 - self.consumption as i64
+    /// Returns the remaining amount for the hard limit of this budget.
+    pub const fn hard_remaining(&self) -> u64 {
+        self.hard_limit - self.consumption
+    }
+
+    /// Returns the remaining amount for the soft limit of this budget.
+    ///
+    /// # Errors
+    ///
+    /// If the consumption of the budget exceeded the soft limit, `Err(excess amount)` will be returned.
+    pub fn soft_remaining(&self) -> std::result::Result<u64, u64> {
+        if self.consumption <= self.soft_limit {
+            Ok(self.soft_limit - self.consumption)
+        } else {
+            Err(self.consumption - self.soft_limit)
+        }
     }
 }
 
