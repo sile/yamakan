@@ -10,6 +10,7 @@ use rand::Rng;
 use std::cmp;
 use std::collections::HashMap;
 
+// TODO: rename to `AshaOptimizerBuilder`
 /// Builder of `AshaOptimizer`.
 #[derive(Debug, Clone)]
 pub struct AshaBuilder {
