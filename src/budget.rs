@@ -30,6 +30,19 @@ impl Budget {
         self.soft_limit
     }
 
+    /// Sets the hard limit of this budget.
+    ///
+    /// # Errors
+    ///
+    /// `limit` must be greater than or equal to the soft limit and consumption,
+    /// otherwise an `ErrorKind::InvalidInput` error will be returned.
+    pub fn set_hard_limit(&mut self, limit: u64) -> Result<()> {
+        track_assert!(self.soft_limit <= limit, ErrorKind::InvalidInput; limit, self.soft_limit);
+        track_assert!(self.consumption <= limit, ErrorKind::InvalidInput; limit, self.consumption);
+        self.hard_limit = limit;
+        Ok(())
+    }
+
     /// Sets the soft limit of this budget.
     ///
     /// # Errors
@@ -52,6 +65,20 @@ impl Budget {
         track_assert!(self.consumption + amount <= self.hard_limit, ErrorKind::InvalidInput;
                       self.consumption, amount, self.hard_limit);
         self.consumption += amount;
+        Ok(())
+    }
+
+    /// Sets the consumption of this budget.
+    ///
+    /// # Errors
+    ///
+    /// `amount` must be a value between `[self.consumption()..self.hard_limit()]`,
+    /// otherwise an `ErrorKind::InvalidInput` error will be returned.
+    pub fn set_consumption(&mut self, amount: u64) -> Result<()> {
+        track_assert!(self.consumption <= amount, ErrorKind::InvalidInput; self.consumption, amount);
+        track_assert!(amount <= self.hard_limit, ErrorKind::InvalidInput; amount, self.hard_limit);
+
+        self.consumption = amount;
         Ok(())
     }
 

@@ -43,7 +43,7 @@ where
     type Param = P::Param;
     type Value = V;
 
-    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param, ()>> {
+    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>> {
         track!(Obs::new(idg, self.param_space.sample(rng)))
     }
 
