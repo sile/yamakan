@@ -50,12 +50,10 @@ impl AshaBuilder {
         track_assert!(0 < min_budget, ErrorKind::InvalidInput; min_budget, max_budget);
 
         let rungs = Rungs::new(min_budget, max_budget, self);
-        let mut initial_budget = Budget::new(max_budget);
-        track!(initial_budget.set_soft_limit(min_budget))?;
         Ok(AshaOptimizer {
             inner,
             rungs,
-            initial_budget,
+            initial_budget: Budget::new(min_budget),
         })
     }
 }
@@ -232,10 +230,7 @@ where
             };
             self.obss.insert(id, Config::Finished { value });
 
-            param
-                .budget_mut()
-                .set_soft_limit(next_budget)
-                .unwrap_or_else(|e| unreachable!("{}", e));
+            param.budget_mut().amount = next_budget;
             Some(Obs {
                 id,
                 param,
@@ -249,7 +244,7 @@ where
     fn tell(&mut self, obs: Obs<Budgeted<P>, V>) -> Result<()> {
         track_assert!(!self.obss.contains_key(&obs.id), ErrorKind::Bug);
         track_assert!(
-            self.curr_budget <= obs.param.budget().consumption(),
+            self.curr_budget <= obs.param.budget().consumption,
             ErrorKind::InvalidInput; self.curr_budget, obs.param.budget()
         );
         self.obss.insert(obs.id, Config::Pending { obs });
