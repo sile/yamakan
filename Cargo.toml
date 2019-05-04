@@ -19,4 +19,5 @@ codecov = {repository = "sile/yamakan"}
 factory = "0.1"
 rand = "0.6"
 rustats = "0.0"
+serde = { version = "1", features = ["derive"], optional = true }
 trackable = "0.2"

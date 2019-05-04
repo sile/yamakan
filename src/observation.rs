@@ -1,9 +1,12 @@
 //! Observation and its identifier.
 use crate::Result;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std;
 
 /// Observation.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Obs<P, V = ()> {
     /// Observation identifier.
     pub id: ObsId,
@@ -77,6 +80,7 @@ impl<P, V> Obs<P, V> {
 
 /// Observation Identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ObsId(u64);
 impl ObsId {
     /// Makes a new observation identifier.

@@ -1,10 +1,13 @@
 //! Budget for evaluating parameters.
 use crate::{ErrorKind, Result};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std;
 use std::cmp::{Ordering, Reverse};
 
 /// Budget.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Budget {
     consumption: u64,
     soft_limit: u64,
@@ -108,6 +111,7 @@ impl Budget {
 
 /// An object which has a specific budget.
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Budgeted<T> {
     budget: Budget,
     inner: T,
@@ -149,6 +153,7 @@ impl<T> Budgeted<T> {
 /// Note that this is provided with the intention of being used for optimizations of minimizing direction.
 /// That is, the higher the level, the lower the order by `std::cmp::Ordering`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Leveled<T> {
     level: u64,
     inner: T,
