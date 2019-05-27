@@ -99,6 +99,16 @@ pub trait IdGen {
     /// Generates a new identifier.
     fn generate(&mut self) -> Result<ObsId>;
 }
+impl<'a, T: IdGen + ?Sized> IdGen for &'a mut T {
+    fn generate(&mut self) -> Result<ObsId> {
+        (**self).generate()
+    }
+}
+impl<T: IdGen + ?Sized> IdGen for Box<T> {
+    fn generate(&mut self) -> Result<ObsId> {
+        (**self).generate()
+    }
+}
 
 /// An implementation of `IdGen` that generates serial identifiers starting from zero.
 #[derive(Debug, Default)]
