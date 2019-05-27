@@ -1,6 +1,6 @@
 [package]
 name = "yamakan"
-version = "0.0.14"
+version = "0.0.15"
 authors = ["Takeru Ohta <phjgt308@gmail.com>"]
 edition = "2018"
 description = "A collection of Black-Box Optimization algorithms"
