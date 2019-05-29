@@ -10,14 +10,13 @@ use rand::Rng;
 use std::cmp;
 use std::collections::HashMap;
 
-// TODO: rename to `AshaOptimizerBuilder`
 /// Builder of `AshaOptimizer`.
 #[derive(Debug, Clone)]
-pub struct AshaBuilder {
+pub struct AshaOptimizerBuilder {
     reduction_factor: usize,
 }
-impl AshaBuilder {
-    /// Makes a new `AshaBuilder` instance with the default settings.
+impl AshaOptimizerBuilder {
+    /// Makes a new `AshaOptimizerBuilder` instance with the default settings.
     pub const fn new() -> Self {
         Self {
             reduction_factor: 2,
@@ -57,7 +56,7 @@ impl AshaBuilder {
         })
     }
 }
-impl Default for AshaBuilder {
+impl Default for AshaOptimizerBuilder {
     fn default() -> Self {
         Self::new()
     }
@@ -79,7 +78,7 @@ where
 {
     /// Makes a new `AshaOptimizer` instance with the default settings.
     pub fn new(inner: O, min_budget: u64, max_budget: u64) -> Result<Self> {
-        track!(AshaBuilder::new().finish(inner, min_budget, max_budget))
+        track!(AshaOptimizerBuilder::new().finish(inner, min_budget, max_budget))
     }
 
     /// Returns a references to the underlying optimizer.
@@ -136,7 +135,7 @@ impl<P, V> Rungs<P, V>
 where
     V: Ord,
 {
-    fn new(min_budget: u64, max_budget: u64, builder: &AshaBuilder) -> Self {
+    fn new(min_budget: u64, max_budget: u64, builder: &AshaOptimizerBuilder) -> Self {
         let mut rungs = Vec::new();
         let mut budget = min_budget;
         while budget < max_budget {
@@ -188,7 +187,7 @@ impl<P, V> Rung<P, V>
 where
     V: Ord,
 {
-    fn new(curr_budget: u64, next_budget: Option<u64>, builder: &AshaBuilder) -> Self {
+    fn new(curr_budget: u64, next_budget: Option<u64>, builder: &AshaOptimizerBuilder) -> Self {
         Self {
             obss: HashMap::new(),
             curr_budget,
