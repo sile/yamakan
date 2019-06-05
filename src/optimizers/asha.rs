@@ -14,12 +14,14 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct AshaOptimizerBuilder {
     reduction_factor: usize,
+    without_checkpoint: bool,
 }
 impl AshaOptimizerBuilder {
     /// Makes a new `AshaOptimizerBuilder` instance with the default settings.
     pub const fn new() -> Self {
         Self {
             reduction_factor: 2,
+            without_checkpoint: false,
         }
     }
 
@@ -32,6 +34,12 @@ impl AshaOptimizerBuilder {
         track_assert!(factor > 1, ErrorKind::InvalidInput; factor);
         self.reduction_factor = factor;
         Ok(self)
+    }
+
+    /// Makes the resulting optimizer work well with evaluators that don't have the capability of checkpointing.
+    pub fn without_checkpoint(&mut self) -> &mut Self {
+        self.without_checkpoint = true;
+        self
     }
 
     /// Builds a new `AshaOptimizer` instance.
@@ -53,6 +61,7 @@ impl AshaOptimizerBuilder {
             inner,
             rungs,
             initial_budget: Budget::new(min_budget),
+            without_checkpoint: self.without_checkpoint,
         })
     }
 }
@@ -70,6 +79,7 @@ pub struct AshaOptimizer<O: Optimizer, P> {
     inner: O,
     rungs: Rungs<P, O::Value>,
     initial_budget: Budget,
+    without_checkpoint: bool,
 }
 impl<O, P> AshaOptimizer<O, P>
 where
@@ -106,7 +116,11 @@ where
     type Value = O::Value;
 
     fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>> {
-        if let Some(obs) = self.rungs.ask_promotable() {
+        if let Some(mut obs) = self.rungs.ask_promotable() {
+            if self.without_checkpoint {
+                obs.id = track!(idg.generate())?;
+                obs.param.budget_mut().consumption = 0;
+            }
             Ok(obs)
         } else {
             let obs = track!(self.inner.ask(rng, idg))?;
@@ -159,11 +173,14 @@ where
         None
     }
 
-    fn tell(&mut self, obs: Obs<Budgeted<P>, V>) -> Result<usize> {
-        for (i, rung) in self.0.iter_mut().enumerate() {
-            if !rung.obss.contains_key(&obs.id) {
+    fn tell(&mut self, obs: Obs<Budgeted<P>, V>) -> Result<()> {
+        use std::u64;
+
+        for rung in self.0.iter_mut().rev() {
+            let p = obs.param.budget().consumption;
+            if rung.curr_budget <= p && p < rung.next_budget.unwrap_or(u64::MAX) {
                 track!(rung.tell(obs))?;
-                return Ok(i);
+                return Ok(());
             }
         }
         track_panic!(ErrorKind::InvalidInput; obs.id);
