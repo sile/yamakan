@@ -17,13 +17,13 @@ pub struct NelderMeadOptimizer<P, V> {
     param_space: Vec<P>,
     simplex: Vec<Pair<V>>,
     alpha: FiniteF64,
-    beta: f64,
+    beta: FiniteF64,
     gamma: f64,
     delta: f64,
     initial: Option<Vec<FiniteF64>>,
     centroid: Vec<FiniteF64>,
     evaluating: Option<ObsId>,
-    state: State,
+    state: State<V>,
 }
 impl<P, V> NelderMeadOptimizer<P, V>
 where
@@ -31,6 +31,13 @@ where
     V: Ord,
 {
     pub fn new(param_space: Vec<P>, x0: &[P::Param]) -> Result<Self> {
+        track_assert!(
+            x0.len() >= 2,
+            ErrorKind::InvalidInput,
+            "Too few dimensions: {}",
+            x0.len()
+        );
+
         let dim = x0.len() as f64;
         let x0 = param_space
             .iter()
@@ -41,7 +48,7 @@ where
             param_space,
             simplex: Vec::with_capacity(x0.len() + 1),
             alpha: track!(FiniteF64::new(1.0))?,
-            beta: 1.0 + 2.0 / dim,
+            beta: track!(FiniteF64::new(1.0 + 2.0 / dim))?,
             gamma: 0.75 - 1.0 / (2.0 * dim),
             delta: 1.0 - 1.0 / dim,
             initial: Some(x0),
@@ -113,6 +120,44 @@ where
             .collect()
     }
 
+    fn reflect_tell(&mut self, obs: Obs<Vec<FiniteF64>, V>) {
+        if obs.value < self.lowest().value {
+            self.state = State::Expand(obs);
+        } else if obs.value < self.second_highest().value {
+            panic!("accept")
+        } else {
+            panic!("contract")
+        }
+    }
+
+    fn expand_ask(&mut self, prev: Vec<FiniteF64>) -> Vec<FiniteF64> {
+        self.centroid
+            .iter()
+            .zip(prev.iter())
+            .map(|(&c, &x)| c + self.beta * (x - c))
+            .collect()
+    }
+
+    fn expand_tell(&mut self, prev: Obs<Vec<FiniteF64>, V>, curr: Obs<Vec<FiniteF64>, V>) {
+        if prev.value < curr.value {
+            self.accept(prev);
+        } else {
+            self.accept(curr);
+        }
+    }
+
+    fn accept(&mut self, obs: Obs<Vec<FiniteF64>, V>) {
+        panic!()
+    }
+
+    fn lowest(&self) -> &Pair<V> {
+        &self.simplex[0]
+    }
+
+    fn second_highest(&self) -> &Pair<V> {
+        &self.simplex[self.simplex.len() - 2]
+    }
+
     fn xh(&self) -> &[FiniteF64] {
         &self.simplex.last().unwrap_or_else(|| unreachable!()).param
     }
@@ -148,9 +193,14 @@ where
     fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>> {
         track_assert!(self.evaluating.is_none(), ErrorKind::Other);
 
-        let x = match self.state {
+        // TODO: Avoid clone
+        let x = match &self.state {
             State::Initialize => self.initial_ask(),
             State::Reflect => self.reflect_ask(),
+            State::Expand(prev) => {
+                let prev = prev.param.clone();
+                self.expand_ask(prev)
+            }
         };
 
         let x = track!(self.adjust(x))?;
@@ -171,11 +221,16 @@ where
             .map(|(p, x)| track!(p.encode(x)))
             .collect::<Result<Vec<_>>>()))?;
 
-        match self.state {
+        match std::mem::replace(&mut self.state, State::Initialize) {
             State::Initialize => {
                 self.initial_tell(obs);
             }
-            State::Reflect => panic!(),
+            State::Reflect => {
+                self.reflect_tell(obs);
+            }
+            State::Expand(prev) => {
+                self.expand_tell(prev, obs);
+            }
         }
 
         Ok(())
@@ -192,8 +247,42 @@ struct Pair<V> {
     value: V,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum State {
+#[derive(Debug, Clone)]
+enum State<V> {
     Initialize,
     Reflect,
+    Expand(Obs<Vec<FiniteF64>, V>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::observation::SerialIdGenerator;
+    use crate::parameters::F64;
+    use rand;
+    use trackable::result::TopLevelResult;
+
+    fn objective(param: &[f64]) -> FiniteF64 {
+        FiniteF64::new(param[0].powi(2) - param[1]).unwrap_or_else(|e| panic!("{}", e))
+    }
+
+    #[test]
+    fn nelder_mead_optimizer_works() -> TopLevelResult {
+        let param_space = vec![F64::new(0.0, 100.0)?, F64::new(0.0, 100.0)?];
+        let mut optimizer = NelderMeadOptimizer::new(param_space, &[10.0, 20.0])?;
+        let mut rng = rand::thread_rng();
+        let mut idg = SerialIdGenerator::new();
+
+        for i in 0..10 {
+            let obs = optimizer.ask(&mut rng, &mut idg)?;
+            println!("[{}] obs={:?}", i, obs);
+
+            let value = objective(&obs.param);
+            println!("[{}] value={}", i, value.get());
+
+            optimizer.tell(obs.map_value(|_| value))?;
+        }
+
+        Ok(())
+    }
 }
