@@ -17,7 +17,7 @@ codecov = {repository = "sile/yamakan"}
 
 [dependencies]
 factory = "0.1"
-rand = "0.6"
+rand = "0.7"
 rustats = "0.0"
 serde = { version = "1", features = ["derive"], optional = true }
 trackable = "0.2"
