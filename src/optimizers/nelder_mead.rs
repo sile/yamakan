@@ -1,17 +1,23 @@
-#![allow(missing_docs)]
+//! Adaptive nelder-mead simplex algorithm.
+//!
+//! # References
+//!
+//! - [Implementing the Nelder-Mead simplex algorithm with adaptive parameters][ANMS]
+//! - [Nelder-Mead algorithm](http://var.scholarpedia.org/article/Nelder-Mead_algorithm)
+//! - [Nelder-Mead Method (Wikipedia)](https://en.wikipedia.org/wiki/Nelder–Mead_method)
+//!
+//! [ANMS]: https://link.springer.com/article/10.1007/s10589-010-9329-3
 use crate::observation::{IdGen, Obs, ObsId};
-use crate::parameters::Continuous;
+use crate::parameters::{Continuous, F64};
 use crate::{ErrorKind, Optimizer, Result};
+use rand::distributions::Distribution;
 use rand::Rng;
 use rustats::num::FiniteF64;
 use std;
 
-/// Adaptive Nelder-Mead Simplex (ANMS) algorithms.
+/// An optimizer based on [Adaptive Nelder-Mead Simplex (ANMS)][ANMS] algorithm.
 ///
-/// # References
-///
-/// - Fuchang Gao and Lixing Han (2010), Springer US. "Implementing the Nelder-Mead simplex algorithm with adaptive parameters" (doi:10.1007/s10589-010-9329-3)
-/// - Saša Singer and John Nelder (2009), Scholarpedia, 4(7):2928. "Nelder-Mead algorithm" (doi:10.4249/scholarpedia.2928)
+/// [ANMS]: https://link.springer.com/article/10.1007/s10589-010-9329-3
 #[derive(Debug)]
 pub struct NelderMeadOptimizer<P, V> {
     param_space: Vec<P>,
@@ -30,18 +36,31 @@ where
     P: Continuous,
     V: Ord,
 {
-    pub fn new(param_space: Vec<P>, x0: &[P::Param]) -> Result<Self> {
+    /// Makes a new `NelderMeadOptimizer`.
+    pub fn new<R: Rng + ?Sized>(param_space: Vec<P>, rng: &mut R) -> Result<Self> {
+        let point = param_space
+            .iter()
+            .map(|p| {
+                let x = track!(FiniteF64::new(F64::from(p.range()).sample(rng)))?;
+                track!(p.decode(x))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        track!(Self::with_initial_point(param_space, &point))
+    }
+
+    /// Makes a new `NelderMeadOptimizer` which has the given search point.
+    pub fn with_initial_point(param_space: Vec<P>, point: &[P::Param]) -> Result<Self> {
         track_assert!(
-            x0.len() >= 2,
+            point.len() >= 2,
             ErrorKind::InvalidInput,
             "Too few dimensions: {}",
-            x0.len()
+            point.len()
         );
 
-        let dim = x0.len() as f64;
+        let dim = point.len() as f64;
         let x0 = param_space
             .iter()
-            .zip(x0.iter())
+            .zip(point.iter())
             .map(|(p, x)| track!(p.encode(x)))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
@@ -56,6 +75,11 @@ where
             evaluating: None,
             state: State::Initialize,
         })
+    }
+
+    /// Returns a reference to the parameter space.
+    pub fn param_space(&self) -> &[P] {
+        &self.param_space
     }
 
     fn dim(&self) -> usize {
@@ -121,7 +145,7 @@ where
     fn reflect_ask(&mut self) -> Vec<FiniteF64> {
         self.centroid
             .iter()
-            .zip(self.xh().iter())
+            .zip(self.highest().param.iter())
             .map(|(&x0, &xh)| x0 + self.alpha * (x0 - xh))
             .collect()
     }
@@ -242,11 +266,6 @@ where
 
     fn highest(&self) -> &Pair<V> {
         &self.simplex[self.simplex.len() - 1]
-    }
-
-    // TODO: delete
-    fn xh(&self) -> &[FiniteF64] {
-        &self.simplex.last().unwrap_or_else(|| unreachable!()).param
     }
 
     fn update_centroid(&mut self) {
@@ -380,7 +399,7 @@ mod tests {
     #[test]
     fn nelder_mead_optimizer_works() -> TopLevelResult {
         let param_space = vec![F64::new(0.0, 100.0)?, F64::new(0.0, 100.0)?];
-        let mut optimizer = NelderMeadOptimizer::new(param_space, &[10.0, 20.0])?;
+        let mut optimizer = NelderMeadOptimizer::with_initial_point(param_space, &[10.0, 20.0])?;
         let mut rng = rand::thread_rng();
         let mut idg = SerialIdGenerator::new();
 
