@@ -18,8 +18,8 @@ pub struct NelderMeadOptimizer<P, V> {
     simplex: Vec<Pair<V>>,
     alpha: FiniteF64,
     beta: FiniteF64,
-    gamma: f64,
-    delta: f64,
+    gamma: FiniteF64,
+    delta: FiniteF64,
     initial: Option<Vec<FiniteF64>>,
     centroid: Vec<FiniteF64>,
     evaluating: Option<ObsId>,
@@ -49,8 +49,8 @@ where
             simplex: Vec::with_capacity(x0.len() + 1),
             alpha: track!(FiniteF64::new(1.0))?,
             beta: track!(FiniteF64::new(1.0 + 2.0 / dim))?,
-            gamma: 0.75 - 1.0 / (2.0 * dim),
-            delta: 1.0 - 1.0 / dim,
+            gamma: track!(FiniteF64::new(0.75 - 1.0 / (2.0 * dim)))?,
+            delta: track!(FiniteF64::new(1.0 - 1.0 / dim))?,
             initial: Some(x0),
             centroid: Vec::new(),
             evaluating: None,
@@ -69,7 +69,13 @@ where
             .map(|(p, v)| {
                 let r = p.range();
                 let v = r.low.get().max(v.get());
-                let v = (r.high.get() - std::f64::EPSILON).min(v);
+                let mut v = (r.high.get() - std::f64::EPSILON).min(v);
+                for i in 2.. {
+                    if v != r.high.get() {
+                        break;
+                    }
+                    v -= std::f64::EPSILON * i as f64;
+                }
                 let v = track!(FiniteF64::new(v))?;
                 track!(p.decode(v))
             })
@@ -124,9 +130,11 @@ where
         if obs.value < self.lowest().value {
             self.state = State::Expand(obs);
         } else if obs.value < self.second_highest().value {
-            panic!("accept")
+            self.accept(obs);
+        } else if obs.value < self.highest().value {
+            self.state = State::ContractOutside(obs);
         } else {
-            panic!("contract")
+            self.state = State::ContractInside(obs);
         }
     }
 
@@ -146,8 +154,82 @@ where
         }
     }
 
+    fn contract_outside_ask(&mut self, prev: Vec<FiniteF64>) -> Vec<FiniteF64> {
+        self.centroid
+            .iter()
+            .zip(prev.iter())
+            .map(|(&c, &x)| c + self.gamma * (x - c))
+            .collect()
+    }
+
+    fn contract_outside_tell(
+        &mut self,
+        prev: Obs<Vec<FiniteF64>, V>,
+        curr: Obs<Vec<FiniteF64>, V>,
+    ) {
+        if curr.value <= prev.value {
+            self.accept(curr);
+        } else {
+            self.shrink();
+        }
+    }
+
+    fn contract_inside_ask(&mut self, prev: Vec<FiniteF64>) -> Vec<FiniteF64> {
+        self.centroid
+            .iter()
+            .zip(prev.iter())
+            .map(|(&c, &x)| c - self.gamma * (x - c))
+            .collect()
+    }
+
+    fn contract_inside_tell(
+        &mut self,
+        _prev: Obs<Vec<FiniteF64>, V>,
+        curr: Obs<Vec<FiniteF64>, V>,
+    ) {
+        if curr.value < self.highest().value {
+            self.accept(curr);
+        } else {
+            self.shrink();
+        }
+    }
+
+    fn shrink_ask(&mut self, index: usize) -> Vec<FiniteF64> {
+        self.lowest()
+            .param
+            .iter()
+            .zip(self.simplex[index].param.iter())
+            .map(|(&xl, &xi)| xl + self.delta * (xi - xl))
+            .collect()
+    }
+
+    fn shrink_tell(&mut self, obs: Obs<Vec<FiniteF64>, V>, index: usize) {
+        self.simplex[index] = Pair {
+            param: obs.param,
+            value: obs.value,
+        };
+        if index < self.simplex.len() - 1 {
+            self.state = State::Shrink { index: index + 1 };
+        } else {
+            self.update_centroid();
+            self.state = State::Reflect;
+        }
+    }
+
     fn accept(&mut self, obs: Obs<Vec<FiniteF64>, V>) {
-        panic!()
+        // TODO: optimize
+        self.simplex.push(Pair {
+            param: obs.param,
+            value: obs.value,
+        });
+        self.simplex.sort_by(|a, b| a.value.cmp(&b.value));
+        self.simplex.pop();
+        self.update_centroid();
+        self.state = State::Reflect;
+    }
+
+    fn shrink(&mut self) {
+        self.state = State::Shrink { index: 1 };
     }
 
     fn lowest(&self) -> &Pair<V> {
@@ -158,6 +240,11 @@ where
         &self.simplex[self.simplex.len() - 2]
     }
 
+    fn highest(&self) -> &Pair<V> {
+        &self.simplex[self.simplex.len() - 1]
+    }
+
+    // TODO: delete
     fn xh(&self) -> &[FiniteF64] {
         &self.simplex.last().unwrap_or_else(|| unreachable!()).param
     }
@@ -190,16 +277,27 @@ where
     type Param = Vec<P::Param>;
     type Value = V;
 
-    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>> {
+    fn ask<R: Rng, G: IdGen>(&mut self, _rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>> {
         track_assert!(self.evaluating.is_none(), ErrorKind::Other);
 
-        // TODO: Avoid clone
         let x = match &self.state {
             State::Initialize => self.initial_ask(),
             State::Reflect => self.reflect_ask(),
             State::Expand(prev) => {
                 let prev = prev.param.clone();
                 self.expand_ask(prev)
+            }
+            State::ContractOutside(prev) => {
+                let prev = prev.param.clone();
+                self.contract_outside_ask(prev)
+            }
+            State::ContractInside(prev) => {
+                let prev = prev.param.clone();
+                self.contract_inside_ask(prev)
+            }
+            State::Shrink { index } => {
+                let index = *index;
+                self.shrink_ask(index)
             }
         };
 
@@ -231,6 +329,15 @@ where
             State::Expand(prev) => {
                 self.expand_tell(prev, obs);
             }
+            State::ContractOutside(prev) => {
+                self.contract_outside_tell(prev, obs);
+            }
+            State::ContractInside(prev) => {
+                self.contract_inside_tell(prev, obs);
+            }
+            State::Shrink { index } => {
+                self.shrink_tell(obs, index);
+            }
         }
 
         Ok(())
@@ -241,6 +348,7 @@ where
     }
 }
 
+// TODO:replace with Obs?
 #[derive(Debug, Clone)]
 struct Pair<V> {
     param: Vec<FiniteF64>,
@@ -252,6 +360,9 @@ enum State<V> {
     Initialize,
     Reflect,
     Expand(Obs<Vec<FiniteF64>, V>),
+    ContractOutside(Obs<Vec<FiniteF64>, V>),
+    ContractInside(Obs<Vec<FiniteF64>, V>),
+    Shrink { index: usize },
 }
 
 #[cfg(test)]
@@ -273,12 +384,10 @@ mod tests {
         let mut rng = rand::thread_rng();
         let mut idg = SerialIdGenerator::new();
 
-        for i in 0..10 {
+        for i in 0..100 {
             let obs = optimizer.ask(&mut rng, &mut idg)?;
-            println!("[{}] obs={:?}", i, obs);
-
             let value = objective(&obs.param);
-            println!("[{}] value={}", i, value.get());
+            println!("[{}] param={:?}, value={}", i, obs.param, value.get());
 
             optimizer.tell(obs.map_value(|_| value))?;
         }
