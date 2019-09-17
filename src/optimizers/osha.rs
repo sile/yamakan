@@ -14,6 +14,7 @@ where
     active: Option<OptimizerState<O, O::Value>>,
     optimizers: Vec<OptimizerState<O, O::Value>>,
     min_evals: usize,
+    warmup_evals: usize,
 }
 impl<M, O> OshaOptimizer<M, O>
 where
@@ -26,6 +27,7 @@ where
             active: None,
             optimizers: Vec::new(),
             min_evals: 10,
+            warmup_evals: 10,
         }
     }
 
@@ -36,6 +38,7 @@ where
             active: None,
             optimizers: Vec::new(),
             min_evals,
+            warmup_evals: 10,
         }
     }
 }
@@ -48,38 +51,38 @@ where
     fn activate(&mut self) -> bool {
         assert!(self.active.is_none());
 
-        self.optimizers.sort_by(|a, b| a.key().cmp(&b.key()));
+        for rung in 0.. {
+            // TODO: optimize
+            self.optimizers
+                .sort_by(|a, b| a.key(rung).cmp(&b.key(rung)));
 
-        let mut rung_evals = self.min_evals;
-        loop {
-            let n = self
-                .optimizers
-                .iter()
-                .take_while(|o| o.rung_evals >= rung_evals)
-                .count();
+            let n = self.optimizers.iter().filter(|o| o.rung >= rung).count();
             if n == 0 {
                 return true;
             }
             let i = self
                 .optimizers
                 .iter()
-                .position(|o| o.rung_evals == rung_evals)
+                .position(|o| o.rung == rung)
                 .unwrap_or_else(|| unreachable!());
 
             if i < n / 2 {
                 let mut optimizer = self.optimizers.swap_remove(i);
                 optimizer.rung_evals *= 2;
+                optimizer.rung += 1;
                 if optimizer.stagnated {
                     self.optimizers.push(optimizer);
                     return false;
                 } else {
-                    optimizer.stagnated = true;
+                    if optimizer.evals >= self.warmup_evals {
+                        optimizer.stagnated = true;
+                    }
                     self.active = Some(optimizer);
                     return true;
                 }
             }
-            rung_evals *= 2;
         }
+        unreachable!();
     }
 }
 impl<M, O> Optimizer for OshaOptimizer<M, O>
@@ -108,8 +111,8 @@ where
         let value = obs.value.clone();
         track!(optimizer.inner.tell(obs))?;
 
-        if optimizer.best.as_ref().map_or(true, |best| value < *best) {
-            optimizer.best = Some(value.clone());
+        if optimizer.best().map_or(true, |best| value < *best) {
+            optimizer.set_best(value.clone());
             optimizer.stagnated = false;
             track!(self.meta_optimizer.tell(Obs {
                 id: optimizer.id,
@@ -138,9 +141,10 @@ where
 #[derive(Debug)]
 struct OptimizerState<O, V> {
     id: ObsId,
-    best: Option<V>,
+    bests: Vec<V>,
     evals: usize,
     rung_evals: usize,
+    rung: usize,
     stagnated: bool,
     inner: O,
 }
@@ -148,18 +152,28 @@ impl<O, V> OptimizerState<O, V> {
     fn new(id: ObsId, inner: O, min_evals: usize) -> Self {
         Self {
             id,
-            best: None,
+            bests: Vec::new(),
             evals: 0,
             rung_evals: min_evals,
+            rung: 0,
             stagnated: false,
             inner,
         }
     }
 
-    fn key(&self) -> (Reverse<usize>, &V) {
-        (
-            Reverse(self.rung_evals),
-            self.best.as_ref().unwrap_or_else(|| unreachable!()),
-        )
+    fn best(&self) -> Option<&V> {
+        self.bests.get(self.rung)
+    }
+
+    fn set_best(&mut self, value: V) {
+        if self.best().is_none() {
+            self.bests.push(value);
+        } else {
+            self.bests[self.rung] = value;
+        }
+    }
+
+    fn key(&self, rung: usize) -> Reverse<Option<Reverse<&V>>> {
+        Reverse(self.bests.get(rung).map(Reverse))
     }
 }
