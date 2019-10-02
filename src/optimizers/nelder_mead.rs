@@ -296,7 +296,7 @@ where
     type Param = Vec<P::Param>;
     type Value = V;
 
-    fn ask<R: Rng, G: IdGen>(&mut self, _rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>> {
+    fn ask<R: Rng, G: IdGen>(&mut self, _rng: R, idg: G) -> Result<Obs<Self::Param>> {
         track_assert!(self.evaluating.is_none(), ErrorKind::Other);
 
         let x = match &self.state {
@@ -359,10 +359,6 @@ where
             }
         }
 
-        Ok(())
-    }
-
-    fn forget(&mut self, _id: ObsId) -> Result<()> {
         Ok(())
     }
 }

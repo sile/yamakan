@@ -19,7 +19,7 @@ pub struct Obs<P, V = ()> {
 }
 impl<P> Obs<P, ()> {
     /// Makes a new unevaluated observation.
-    pub fn new<G: IdGen>(idg: &mut G, param: P) -> Result<Self> {
+    pub fn new<G: IdGen>(mut idg: G, param: P) -> Result<Self> {
         let id = track!(idg.generate())?;
         Ok(Self {
             id,

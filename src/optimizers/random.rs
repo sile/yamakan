@@ -1,5 +1,5 @@
 //! Random optimizer.
-use crate::observation::{IdGen, Obs, ObsId};
+use crate::observation::{IdGen, Obs};
 use crate::parameters::ParamSpace;
 use crate::{Optimizer, Result};
 use rand::distributions::Distribution;
@@ -43,15 +43,11 @@ where
     type Param = P::Param;
     type Value = V;
 
-    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>> {
-        track!(Obs::new(idg, self.param_space.sample(rng)))
+    fn ask<R: Rng, G: IdGen>(&mut self, mut rng: R, idg: G) -> Result<Obs<Self::Param>> {
+        track!(Obs::new(idg, self.param_space.sample(&mut rng)))
     }
 
     fn tell(&mut self, _obs: Obs<Self::Param, Self::Value>) -> Result<()> {
-        Ok(())
-    }
-
-    fn forget(&mut self, _id: ObsId) -> Result<()> {
         Ok(())
     }
 }

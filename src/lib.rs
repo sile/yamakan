@@ -6,7 +6,7 @@
 #[macro_use]
 extern crate trackable;
 
-use crate::observation::{IdGen, Obs, ObsId};
+use crate::observation::{IdGen, Obs};
 use rand::Rng;
 
 pub use self::error::{Error, ErrorKind};
@@ -32,7 +32,7 @@ pub trait Optimizer {
     /// Asks the next parameter to be evaluated.
     ///
     /// The evaluation result should be told to this optimizer.
-    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>>;
+    fn ask<R: Rng, G: IdGen>(&mut self, rng: R, idg: G) -> Result<Obs<Self::Param>>;
 
     /// Tells the result of an observation to this optimizer.
     ///
@@ -44,12 +44,4 @@ pub trait Optimizer {
     /// Some implementations may return an `ErrorKind::UnknownObservation` error
     /// if this optimizer does not known (or has not generated) the specified observation.
     fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()>;
-
-    /// Forgets the observation associated with the given ID.
-    ///
-    /// # Errors
-    ///
-    /// Some implementations may return an `ErrorKind::UnknownObservation` error
-    /// if this optimizer does not known (or has not generated) the specified observation.
-    fn forget(&mut self, id: ObsId) -> Result<()>;
 }

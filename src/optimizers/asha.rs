@@ -115,7 +115,7 @@ where
     type Param = Budgeted<P>;
     type Value = O::Value;
 
-    fn ask<R: Rng, G: IdGen>(&mut self, rng: &mut R, idg: &mut G) -> Result<Obs<Self::Param>> {
+    fn ask<R: Rng, G: IdGen>(&mut self, rng: R, mut idg: G) -> Result<Obs<Self::Param>> {
         if let Some(mut obs) = self.rungs.ask_promotable() {
             if self.without_checkpoint {
                 obs.id = track!(idg.generate())?;
@@ -134,11 +134,6 @@ where
     fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()> {
         track!(self.rungs.tell(obs.clone()))?;
         track!(self.inner.tell(obs))?;
-        Ok(())
-    }
-
-    fn forget(&mut self, id: ObsId) -> Result<()> {
-        self.rungs.forget(id);
         Ok(())
     }
 }
@@ -184,12 +179,6 @@ where
             }
         }
         track_panic!(ErrorKind::InvalidInput; obs.id);
-    }
-
-    fn forget(&mut self, id: ObsId) {
-        for rung in &mut self.0 {
-            rung.forget(id);
-        }
     }
 }
 
@@ -262,10 +251,6 @@ where
         );
         self.obss.insert(obs.id, Config::Pending { obs });
         Ok(())
-    }
-
-    fn forget(&mut self, id: ObsId) {
-        self.obss.remove(&id);
     }
 }
 
