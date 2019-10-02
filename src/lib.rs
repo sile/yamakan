@@ -12,6 +12,7 @@ use rand::Rng;
 pub use self::error::{Error, ErrorKind};
 
 pub mod budget;
+pub mod domains;
 pub mod observation;
 pub mod optimizers;
 pub mod parameters;
@@ -44,4 +45,10 @@ pub trait Optimizer {
     /// Some implementations may return an `ErrorKind::UnknownObservation` error
     /// if this optimizer does not known (or has not generated) the specified observation.
     fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()>;
+}
+
+/// Parameter search domain.
+pub trait Domain {
+    /// A specific point of this domain.
+    type Point;
 }

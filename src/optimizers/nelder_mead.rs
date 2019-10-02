@@ -112,9 +112,9 @@ where
         } else {
             let i = self.simplex.len() - 1;
             let tau = if self.simplex[0].param[i].get() == 0.0 {
-                0.00025
+                0.00025 // TODO
             } else {
-                0.05
+                0.05 // TODO
             };
             let x = self.simplex[0]
                 .param

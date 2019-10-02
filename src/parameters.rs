@@ -4,11 +4,18 @@ use rand::distributions::Distribution;
 use rand::Rng;
 use rustats::num::FiniteF64;
 use rustats::range::Range;
+use std::num::NonZeroUsize;
 
 /// This trait allows for defining a parameter space.
 pub trait ParamSpace {
     /// Concrete parameter type.
     type Param;
+}
+
+/// Categorical parameter space.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CategoricalParamSpace {
+    cardinality: NonZeroUsize,
 }
 
 /// This trait allows for defining a categorical parameter space.

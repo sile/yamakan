@@ -1,50 +1,39 @@
 //! Random optimizer.
 use crate::observation::{IdGen, Obs};
-use crate::parameters::ParamSpace;
-use crate::{Optimizer, Result};
+use crate::{Domain, Optimizer, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
 use std::marker::PhantomData;
 
 /// Random optimizer.
 ///
-/// This optimizer samples parameters at random from the given distribution.
+/// This optimizer samples parameters at random from the given domain.
 #[derive(Debug)]
 pub struct RandomOptimizer<P, V> {
-    param_space: P,
+    param_domain: P,
     _value: PhantomData<V>,
 }
 impl<P, V> RandomOptimizer<P, V>
 where
-    P: ParamSpace + Distribution<<P as ParamSpace>::Param>,
+    P: Domain + Distribution<<P as Domain>::Point>,
 {
     /// Makes a new `RandomOptimizer` instance.
-    pub fn new(param_space: P) -> Self {
+    pub fn new(param_domain: P) -> Self {
         Self {
-            param_space,
+            param_domain,
             _value: PhantomData,
         }
-    }
-
-    /// Returns a reference to the parameter space.
-    pub fn param_space(&self) -> &P {
-        &self.param_space
-    }
-
-    /// Returns a mutable reference to the parameter space.
-    pub fn param_space_mut(&mut self) -> &mut P {
-        &mut self.param_space
     }
 }
 impl<P, V> Optimizer for RandomOptimizer<P, V>
 where
-    P: ParamSpace + Distribution<<P as ParamSpace>::Param>,
+    P: Domain + Distribution<<P as Domain>::Point>,
 {
-    type Param = P::Param;
+    type Param = P::Point;
     type Value = V;
 
     fn ask<R: Rng, G: IdGen>(&mut self, mut rng: R, idg: G) -> Result<Obs<Self::Param>> {
-        track!(Obs::new(idg, self.param_space.sample(&mut rng)))
+        track!(Obs::new(idg, self.param_domain.sample(&mut rng)))
     }
 
     fn tell(&mut self, _obs: Obs<Self::Param, Self::Value>) -> Result<()> {
@@ -53,7 +42,7 @@ where
 }
 impl<P, V> Default for RandomOptimizer<P, V>
 where
-    P: Default + ParamSpace + Distribution<<P as ParamSpace>::Param>,
+    P: Default + Domain + Distribution<<P as Domain>::Point>,
 {
     fn default() -> Self {
         Self::new(P::default())
@@ -63,22 +52,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domains::DiscreteDomain;
     use crate::observation::SerialIdGenerator;
-    use crate::parameters::Bool;
     use rand;
     use trackable::result::TestResult;
 
     #[test]
     fn random_works() -> TestResult {
-        let mut opt = RandomOptimizer::new(Bool);
+        let mut opt = RandomOptimizer::new(track!(DiscreteDomain::new(10))?);
         let mut rng = rand::thread_rng();
         let mut idg = SerialIdGenerator::new();
 
         let obs = track!(opt.ask(&mut rng, &mut idg))?;
         track!(opt.tell(obs))?;
-
-        let obs = track!(opt.ask(&mut rng, &mut idg))?;
-        track!(opt.forget(obs.id))?;
 
         Ok(())
     }
