@@ -1,22 +1,22 @@
 //! Random optimizer.
 use crate::observation::{IdGen, Obs, ObsId};
-use crate::parameters::PriorDistribution;
+use crate::parameters::ParamSpace;
 use crate::{Optimizer, Result};
+use rand::distributions::Distribution;
 use rand::Rng;
 use std::marker::PhantomData;
 
 /// Random optimizer.
 ///
-/// This optimizer samples parameters at random from the given prior distribution.
-// TODO: remove `V = ()`
+/// This optimizer samples parameters at random from the given distribution.
 #[derive(Debug)]
-pub struct RandomOptimizer<P, V = ()> {
+pub struct RandomOptimizer<P, V> {
     param_space: P,
     _value: PhantomData<V>,
 }
 impl<P, V> RandomOptimizer<P, V>
 where
-    P: PriorDistribution,
+    P: ParamSpace + Distribution<<P as ParamSpace>::Param>,
 {
     /// Makes a new `RandomOptimizer` instance.
     pub fn new(param_space: P) -> Self {
@@ -38,7 +38,7 @@ where
 }
 impl<P, V> Optimizer for RandomOptimizer<P, V>
 where
-    P: PriorDistribution,
+    P: ParamSpace + Distribution<<P as ParamSpace>::Param>,
 {
     type Param = P::Param;
     type Value = V;
@@ -57,7 +57,7 @@ where
 }
 impl<P, V> Default for RandomOptimizer<P, V>
 where
-    P: PriorDistribution + Default,
+    P: Default + ParamSpace + Distribution<<P as ParamSpace>::Param>,
 {
     fn default() -> Self {
         Self::new(P::default())

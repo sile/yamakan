@@ -11,9 +11,6 @@ pub trait ParamSpace {
     type Param;
 }
 
-/// This trait allows for sampling a parameter from the prior distribution of a parameter space.
-pub trait PriorDistribution: ParamSpace + Distribution<<Self as ParamSpace>::Param> {}
-
 /// This trait allows for defining a categorical parameter space.
 pub trait Categorical: ParamSpace {
     /// Returns the number of possible categories.
@@ -78,7 +75,6 @@ impl Distribution<bool> for Bool {
         rng.gen()
     }
 }
-impl PriorDistribution for Bool {}
 
 /// 64-bit unsigned integer number parameter space.
 #[derive(Debug, Clone, Copy)]
@@ -110,7 +106,6 @@ impl Distribution<u64> for U64 {
         rng.gen_range(0, self.0)
     }
 }
-impl PriorDistribution for U64 {}
 
 /// 64-bit floating point number parameter space.
 #[derive(Debug, Clone, Copy)]
@@ -159,4 +154,3 @@ impl Distribution<f64> for F64 {
         rng.gen_range(self.0.low.get(), self.0.high.get())
     }
 }
-impl PriorDistribution for F64 {}
