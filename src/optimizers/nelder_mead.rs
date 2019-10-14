@@ -7,133 +7,117 @@
 //! - [Nelder-Mead Method (Wikipedia)](https://en.wikipedia.org/wiki/Nelder–Mead_method)
 //!
 //! [ANMS]: https://link.springer.com/article/10.1007/s10589-010-9329-3
+use crate::domains::ContinuousDomain;
 use crate::observation::{IdGen, Obs, ObsId};
-use crate::parameters::{Continuous, F64};
 use crate::{ErrorKind, Optimizer, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
-use rustats::num::FiniteF64;
 use std;
 
 /// An optimizer based on [Adaptive Nelder-Mead Simplex (ANMS)][ANMS] algorithm.
 ///
 /// [ANMS]: https://link.springer.com/article/10.1007/s10589-010-9329-3
 #[derive(Debug)]
-pub struct NelderMeadOptimizer<P, V> {
-    param_space: Vec<P>,
-    simplex: Vec<Pair<V>>,
-    alpha: FiniteF64,
-    beta: FiniteF64,
-    gamma: FiniteF64,
-    delta: FiniteF64,
-    initial: Option<Vec<FiniteF64>>,
-    centroid: Vec<FiniteF64>,
+pub struct NelderMeadOptimizer<V> {
+    params_domain: Vec<ContinuousDomain>,
+    simplex: Vec<Obs<Vec<f64>, V>>,
+    alpha: f64,
+    beta: f64,
+    gamma: f64,
+    delta: f64,
+    initial: Vec<Vec<f64>>,
+    centroid: Vec<f64>,
     evaluating: Option<ObsId>,
     state: State<V>,
 }
-impl<P, V> NelderMeadOptimizer<P, V>
+impl<V> NelderMeadOptimizer<V>
 where
-    P: Continuous,
     V: Ord,
 {
     /// Makes a new `NelderMeadOptimizer`.
-    pub fn new<R: Rng + ?Sized>(param_space: Vec<P>, rng: &mut R) -> Result<Self> {
-        let point = param_space
+    pub fn new<R: Rng>(params_domain: Vec<ContinuousDomain>, mut rng: R) -> Result<Self> {
+        let point = params_domain
             .iter()
-            .map(|p| {
-                let x = track!(FiniteF64::new(F64::from(p.range()).sample(rng)))?;
-                track!(p.decode(x))
-            })
-            .collect::<Result<Vec<_>>>()?;
-        track!(Self::with_initial_point(param_space, &point))
+            .map(|p| p.sample(&mut rng))
+            .collect::<Vec<_>>();
+        track!(Self::with_initial_point(params_domain, &point))
     }
 
     /// Makes a new `NelderMeadOptimizer` which has the given search point.
-    pub fn with_initial_point(param_space: Vec<P>, point: &[P::Param]) -> Result<Self> {
+    pub fn with_initial_point(params_domain: Vec<ContinuousDomain>, point: &[f64]) -> Result<Self> {
+        let mut initial_simplex = vec![point.to_vec()];
+        for i in 0..params_domain.len() {
+            let tau = if point[i] == 0.0 { 0.00025 } else { 0.05 };
+            let x = point
+                .iter()
+                .enumerate()
+                .map(|(j, &x0)| if i == j { x0 + tau } else { x0 })
+                .collect();
+            initial_simplex.push(x);
+        }
+        track!(Self::with_initial_simplex(params_domain, initial_simplex))
+    }
+
+    /// Makes a new `NelderMeadOptimizer` with the given simplex.
+    pub fn with_initial_simplex(
+        params_domain: Vec<ContinuousDomain>,
+        initial_simplex: Vec<Vec<f64>>,
+    ) -> Result<Self> {
         track_assert!(
-            point.len() >= 2,
+            params_domain.len() >= 2,
             ErrorKind::InvalidInput,
             "Too few dimensions: {}",
-            point.len()
+            params_domain.len()
+        );
+        track_assert_eq!(
+            params_domain.len() + 1,
+            initial_simplex.len(),
+            ErrorKind::InvalidInput
         );
 
-        let dim = point.len() as f64;
-        let x0 = param_space
-            .iter()
-            .zip(point.iter())
-            .map(|(p, x)| track!(p.encode(x)))
-            .collect::<Result<Vec<_>>>()?;
+        let dim = params_domain.len() as f64;
         Ok(Self {
-            param_space,
-            simplex: Vec::with_capacity(x0.len() + 1),
-            alpha: track!(FiniteF64::new(1.0))?,
-            beta: track!(FiniteF64::new(1.0 + 2.0 / dim))?,
-            gamma: track!(FiniteF64::new(0.75 - 1.0 / (2.0 * dim)))?,
-            delta: track!(FiniteF64::new(1.0 - 1.0 / dim))?,
-            initial: Some(x0),
+            params_domain,
+            simplex: Vec::with_capacity(initial_simplex.len()),
+            alpha: 1.0,
+            beta: 1.0 + 2.0 / dim,
+            gamma: 0.75 - 1.0 / (2.0 * dim),
+            delta: 1.0 - 1.0 / dim,
+            initial: initial_simplex,
             centroid: Vec::new(),
             evaluating: None,
             state: State::Initialize,
         })
     }
 
-    /// Returns a reference to the parameter space.
-    pub fn param_space(&self) -> &[P] {
-        &self.param_space
-    }
-
     fn dim(&self) -> usize {
-        self.param_space.len()
+        self.params_domain.len()
     }
 
-    fn adjust(&self, x: Vec<FiniteF64>) -> Result<Vec<P::Param>> {
-        self.param_space
+    fn adjust(&self, x: Vec<f64>) -> Vec<f64> {
+        self.params_domain
             .iter()
             .zip(x.into_iter())
             .map(|(p, v)| {
-                let r = p.range();
-                let v = r.low.get().max(v.get());
-                let mut v = (r.high.get() - std::f64::EPSILON).min(v);
+                let v = p.low().max(v);
+                let mut v = (p.high() - std::f64::EPSILON).min(v);
                 for i in 2.. {
-                    if v != r.high.get() {
+                    if v != p.high() {
                         break;
                     }
                     v -= std::f64::EPSILON * i as f64;
                 }
-                let v = track!(FiniteF64::new(v))?;
-                track!(p.decode(v))
+                v
             })
             .collect()
     }
 
-    fn initial_ask(&mut self) -> Vec<FiniteF64> {
-        if let Some(x0) = self.initial.take() {
-            x0
-        } else {
-            let i = self.simplex.len() - 1;
-            let tau = if self.simplex[0].param[i].get() == 0.0 {
-                0.00025 // TODO
-            } else {
-                0.05 // TODO
-            };
-            let x = self.simplex[0]
-                .param
-                .iter()
-                .map(|x0| x0.get())
-                .enumerate()
-                .map(|(j, x0)| if i == j { x0 + tau } else { x0 })
-                .map(|x| unsafe { FiniteF64::new_unchecked(x) })
-                .collect();
-            x
-        }
+    fn initial_ask(&mut self) -> Vec<f64> {
+        self.initial.pop().unwrap_or_else(|| unreachable!())
     }
 
-    fn initial_tell(&mut self, obs: Obs<Vec<FiniteF64>, V>) {
-        let pair = Pair {
-            param: obs.param,
-            value: obs.value,
-        };
-        self.simplex.push(pair);
+    fn initial_tell(&mut self, obs: Obs<Vec<f64>, V>) {
+        self.simplex.push(obs);
 
         if self.simplex.len() == self.dim() + 1 {
             self.simplex.sort_by(|a, b| a.value.cmp(&b.value));
@@ -142,7 +126,7 @@ where
         }
     }
 
-    fn reflect_ask(&mut self) -> Vec<FiniteF64> {
+    fn reflect_ask(&mut self) -> Vec<f64> {
         self.centroid
             .iter()
             .zip(self.highest().param.iter())
@@ -150,7 +134,7 @@ where
             .collect()
     }
 
-    fn reflect_tell(&mut self, obs: Obs<Vec<FiniteF64>, V>) {
+    fn reflect_tell(&mut self, obs: Obs<Vec<f64>, V>) {
         if obs.value < self.lowest().value {
             self.state = State::Expand(obs);
         } else if obs.value < self.second_highest().value {
@@ -162,7 +146,7 @@ where
         }
     }
 
-    fn expand_ask(&mut self, prev: Vec<FiniteF64>) -> Vec<FiniteF64> {
+    fn expand_ask(&mut self, prev: Vec<f64>) -> Vec<f64> {
         self.centroid
             .iter()
             .zip(prev.iter())
@@ -170,7 +154,7 @@ where
             .collect()
     }
 
-    fn expand_tell(&mut self, prev: Obs<Vec<FiniteF64>, V>, curr: Obs<Vec<FiniteF64>, V>) {
+    fn expand_tell(&mut self, prev: Obs<Vec<f64>, V>, curr: Obs<Vec<f64>, V>) {
         if prev.value < curr.value {
             self.accept(prev);
         } else {
@@ -178,7 +162,7 @@ where
         }
     }
 
-    fn contract_outside_ask(&mut self, prev: Vec<FiniteF64>) -> Vec<FiniteF64> {
+    fn contract_outside_ask(&mut self, prev: Vec<f64>) -> Vec<f64> {
         self.centroid
             .iter()
             .zip(prev.iter())
@@ -186,11 +170,7 @@ where
             .collect()
     }
 
-    fn contract_outside_tell(
-        &mut self,
-        prev: Obs<Vec<FiniteF64>, V>,
-        curr: Obs<Vec<FiniteF64>, V>,
-    ) {
+    fn contract_outside_tell(&mut self, prev: Obs<Vec<f64>, V>, curr: Obs<Vec<f64>, V>) {
         if curr.value <= prev.value {
             self.accept(curr);
         } else {
@@ -198,7 +178,7 @@ where
         }
     }
 
-    fn contract_inside_ask(&mut self, prev: Vec<FiniteF64>) -> Vec<FiniteF64> {
+    fn contract_inside_ask(&mut self, prev: Vec<f64>) -> Vec<f64> {
         self.centroid
             .iter()
             .zip(prev.iter())
@@ -206,11 +186,7 @@ where
             .collect()
     }
 
-    fn contract_inside_tell(
-        &mut self,
-        _prev: Obs<Vec<FiniteF64>, V>,
-        curr: Obs<Vec<FiniteF64>, V>,
-    ) {
+    fn contract_inside_tell(&mut self, _prev: Obs<Vec<f64>, V>, curr: Obs<Vec<f64>, V>) {
         if curr.value < self.highest().value {
             self.accept(curr);
         } else {
@@ -218,7 +194,7 @@ where
         }
     }
 
-    fn shrink_ask(&mut self, index: usize) -> Vec<FiniteF64> {
+    fn shrink_ask(&mut self, index: usize) -> Vec<f64> {
         self.lowest()
             .param
             .iter()
@@ -227,11 +203,8 @@ where
             .collect()
     }
 
-    fn shrink_tell(&mut self, obs: Obs<Vec<FiniteF64>, V>, index: usize) {
-        self.simplex[index] = Pair {
-            param: obs.param,
-            value: obs.value,
-        };
+    fn shrink_tell(&mut self, obs: Obs<Vec<f64>, V>, index: usize) {
+        self.simplex[index] = obs;
         if index < self.simplex.len() - 1 {
             self.state = State::Shrink { index: index + 1 };
         } else {
@@ -240,12 +213,9 @@ where
         }
     }
 
-    fn accept(&mut self, obs: Obs<Vec<FiniteF64>, V>) {
-        // TODO: optimize
-        self.simplex.push(Pair {
-            param: obs.param,
-            value: obs.value,
-        });
+    fn accept(&mut self, obs: Obs<Vec<f64>, V>) {
+        // FIXME: optimize
+        self.simplex.push(obs);
         self.simplex.sort_by(|a, b| a.value.cmp(&b.value));
         self.simplex.pop();
         self.update_centroid();
@@ -256,15 +226,15 @@ where
         self.state = State::Shrink { index: 1 };
     }
 
-    fn lowest(&self) -> &Pair<V> {
+    fn lowest(&self) -> &Obs<Vec<f64>, V> {
         &self.simplex[0]
     }
 
-    fn second_highest(&self) -> &Pair<V> {
+    fn second_highest(&self) -> &Obs<Vec<f64>, V> {
         &self.simplex[self.simplex.len() - 2]
     }
 
-    fn highest(&self) -> &Pair<V> {
+    fn highest(&self) -> &Obs<Vec<f64>, V> {
         &self.simplex[self.simplex.len() - 1]
     }
 
@@ -274,26 +244,25 @@ where
         // NOTE: We assume that `self.simplex` have been sorted by its values.
 
         let n = self.dim();
-        let mut c = vec![FiniteF64::default(); n];
+        let mut c = vec![f64::default(); n];
         for t in self.simplex.iter().take(n) {
             for i in 0..n {
                 c[i] += t.param[i];
             }
         }
 
-        let n = unsafe { FiniteF64::new_unchecked(n as f64) };
+        let n = n as f64;
         for c in &mut c {
             *c /= n;
         }
         self.centroid = c
     }
 }
-impl<P, V> Optimizer for NelderMeadOptimizer<P, V>
+impl<V> Optimizer for NelderMeadOptimizer<V>
 where
-    P: Continuous,
     V: Ord,
 {
-    type Param = Vec<P::Param>;
+    type Param = Vec<f64>;
     type Value = V;
 
     fn ask<R: Rng, G: IdGen>(&mut self, _rng: R, idg: G) -> Result<Obs<Self::Param>> {
@@ -320,7 +289,7 @@ where
             }
         };
 
-        let x = track!(self.adjust(x))?;
+        let x = self.adjust(x);
         let obs = track!(Obs::new(idg, x))?;
         self.evaluating = Some(obs.id);
 
@@ -330,13 +299,6 @@ where
     fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()> {
         track_assert_eq!(self.evaluating, Some(obs.id), ErrorKind::UnknownObservation);
         self.evaluating = None;
-
-        let obs = track!(obs.try_map_param(|xs| self
-            .param_space
-            .iter()
-            .zip(xs.iter())
-            .map(|(p, x)| track!(p.encode(x)))
-            .collect::<Result<Vec<_>>>()))?;
 
         match std::mem::replace(&mut self.state, State::Initialize) {
             State::Initialize => {
@@ -363,48 +325,46 @@ where
     }
 }
 
-// TODO:replace with Obs?
-#[derive(Debug, Clone)]
-struct Pair<V> {
-    param: Vec<FiniteF64>,
-    value: V,
-}
-
 #[derive(Debug, Clone)]
 enum State<V> {
     Initialize,
     Reflect,
-    Expand(Obs<Vec<FiniteF64>, V>),
-    ContractOutside(Obs<Vec<FiniteF64>, V>),
-    ContractInside(Obs<Vec<FiniteF64>, V>),
+    Expand(Obs<Vec<f64>, V>),
+    ContractOutside(Obs<Vec<f64>, V>),
+    ContractInside(Obs<Vec<f64>, V>),
     Shrink { index: usize },
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domains::ContinuousDomain;
     use crate::observation::SerialIdGenerator;
-    use crate::parameters::F64;
+    use ordered_float::NotNan;
     use rand;
     use trackable::result::TopLevelResult;
 
-    fn objective(param: &[f64]) -> FiniteF64 {
-        FiniteF64::new(param[0].powi(2) - param[1]).unwrap_or_else(|e| panic!("{}", e))
+    fn objective(param: &[f64]) -> f64 {
+        param[0].powi(2) - param[1]
     }
 
     #[test]
     fn nelder_mead_optimizer_works() -> TopLevelResult {
-        let param_space = vec![F64::new(0.0, 100.0)?, F64::new(0.0, 100.0)?];
-        let mut optimizer = NelderMeadOptimizer::with_initial_point(param_space, &[10.0, 20.0])?;
+        let params_domain = vec![
+            ContinuousDomain::new(0.0, 100.0)?,
+            ContinuousDomain::new(0.0, 100.0)?,
+        ];
+        let mut optimizer = NelderMeadOptimizer::with_initial_point(params_domain, &[10.0, 20.0])?;
         let mut rng = rand::thread_rng();
         let mut idg = SerialIdGenerator::new();
 
         for i in 0..100 {
             let obs = optimizer.ask(&mut rng, &mut idg)?;
             let value = objective(&obs.param);
-            println!("[{}] param={:?}, value={}", i, obs.param, value.get());
+            println!("[{}] param={:?}, value={}", i, obs.param, value);
 
-            optimizer.tell(obs.map_value(|_| value))?;
+            optimizer
+                .tell(obs.map_value(|_| NotNan::new(value).unwrap_or_else(|e| panic!("{}", e))))?;
         }
 
         Ok(())

@@ -15,7 +15,7 @@ pub mod budget;
 pub mod domains;
 pub mod observation;
 pub mod optimizers;
-pub mod parameters;
+// pub mod parameters; // TODO: delete
 
 mod error;
 
@@ -49,6 +49,6 @@ pub trait Optimizer {
 
 /// Parameter search domain.
 pub trait Domain {
-    /// A specific point of this domain.
+    /// A specific point in this domain.
     type Point;
 }
