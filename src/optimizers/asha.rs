@@ -3,8 +3,9 @@
 //! # References
 //!
 //! - [Massively Parallel Hyperparameter Tuning](https://arxiv.org/abs/1810.05934)
-use crate::budget::{Budget, Budgeted};
-use crate::{ErrorKind, IdGen, Obs, ObsId, Optimizer, Result};
+use crate::{
+    Budget, ErrorKind, IdGen, MfObs, MultiFidelityOptimizer, Obs, ObsId, Optimizer, Ranked, Result,
+};
 use rand::Rng;
 use std::cmp;
 use std::collections::HashMap;
@@ -42,15 +43,15 @@ impl AshaOptimizerBuilder {
     }
 
     /// Builds a new `AshaOptimizer` instance.
-    pub fn finish<O, P>(
+    pub fn finish<V, O>(
         &self,
         inner: O,
         min_budget: u64,
         max_budget: u64,
-    ) -> Result<AshaOptimizer<O, P>>
+    ) -> Result<AshaOptimizer<V, O>>
     where
-        O: Optimizer<Param = Budgeted<P>>,
-        O::Value: Ord,
+        V: Ord,
+        O: Optimizer<Value = Ranked<V>>,
     {
         track_assert!(min_budget <= max_budget, ErrorKind::InvalidInput; min_budget, max_budget);
         track_assert!(0 < min_budget, ErrorKind::InvalidInput; min_budget, max_budget);
@@ -61,6 +62,7 @@ impl AshaOptimizerBuilder {
             rungs,
             initial_budget: Budget::new(min_budget),
             without_checkpoint: self.without_checkpoint,
+            max_budget,
         })
     }
 }
@@ -74,16 +76,17 @@ impl Default for AshaOptimizerBuilder {
 ///
 /// [ASHA]: https://arxiv.org/abs/1810.05934
 #[derive(Debug)]
-pub struct AshaOptimizer<O: Optimizer, P> {
+pub struct AshaOptimizer<V, O: Optimizer> {
     inner: O,
-    rungs: Rungs<P, O::Value>,
+    rungs: Rungs<O::Param, V>,
     initial_budget: Budget,
     without_checkpoint: bool,
+    max_budget: u64,
 }
-impl<O, P> AshaOptimizer<O, P>
+impl<V, O> AshaOptimizer<V, O>
 where
-    O: Optimizer<Param = Budgeted<P>>,
-    O::Value: Ord,
+    V: Ord,
+    O: Optimizer<Value = Ranked<V>>,
 {
     /// Makes a new `AshaOptimizer` instance with the default settings.
     pub fn new(inner: O, min_budget: u64, max_budget: u64) -> Result<Self> {
@@ -105,34 +108,45 @@ where
         self.inner
     }
 }
-impl<O, P> Optimizer for AshaOptimizer<O, P>
+impl<V, O> MultiFidelityOptimizer for AshaOptimizer<V, O>
 where
-    O: Optimizer<Param = Budgeted<P>>,
-    P: Clone,
-    O::Value: Ord + Clone,
+    V: Ord + Clone,
+    O: Optimizer<Value = Ranked<V>>,
+    O::Param: Clone,
 {
-    type Param = Budgeted<P>;
-    type Value = O::Value;
+    type Param = O::Param;
+    type Value = V;
 
-    fn ask<R: Rng, G: IdGen>(&mut self, rng: R, mut idg: G) -> Result<Obs<Self::Param>> {
+    fn ask<R: Rng, G: IdGen>(&mut self, rng: R, mut idg: G) -> Result<MfObs<Self::Param>> {
         if let Some(mut obs) = self.rungs.ask_promotable() {
             if self.without_checkpoint {
                 obs.id = track!(idg.generate())?;
-                obs.param.budget_mut().consumption = 0;
+                obs.budget.consumption = 0;
             }
             Ok(obs)
         } else {
             let obs = track!(self.inner.ask(rng, idg))?;
-            // TODO: track_assert_eq!(obs.param.budget().amount, ...);
-
-            let obs = obs.map_param(|p| Budgeted::new(self.initial_budget, p.get().clone()));
+            let obs = MfObs::from_obs(obs, self.initial_budget);
             Ok(obs)
         }
     }
 
-    fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()> {
-        track!(self.rungs.tell(obs.clone()))?;
+    fn tell(&mut self, obs: MfObs<Self::Param, Self::Value>) -> Result<()> {
+        track_assert!(
+            obs.budget.consumption <= self.max_budget,
+            ErrorKind::InvalidInput; obs.id, obs.budget, self.max_budget
+        );
+
+        if obs.budget.consumption < obs.budget.amount {
+            // The evaluation of this observation was canceled.
+        } else {
+            track!(self.rungs.tell(obs.clone()))?;
+        }
+
+        let rank = self.max_budget - obs.budget.consumption;
+        let obs = Obs::from(obs).map_value(|value| Ranked { rank, value });
         track!(self.inner.tell(obs))?;
+
         Ok(())
     }
 }
@@ -158,7 +172,7 @@ where
         Self(rungs)
     }
 
-    fn ask_promotable(&mut self) -> Option<Obs<Budgeted<P>>> {
+    fn ask_promotable(&mut self) -> Option<MfObs<P>> {
         for rung in self.0.iter_mut().rev() {
             if let Some(obs) = rung.ask_promotable() {
                 return Some(obs);
@@ -167,11 +181,11 @@ where
         None
     }
 
-    fn tell(&mut self, obs: Obs<Budgeted<P>, V>) -> Result<()> {
+    fn tell(&mut self, obs: MfObs<P, V>) -> Result<()> {
         use std::u64;
 
         for rung in self.0.iter_mut().rev() {
-            let p = obs.param.budget().consumption;
+            let p = obs.budget.consumption;
             if rung.curr_budget <= p && p < rung.next_budget.unwrap_or(u64::MAX) {
                 track!(rung.tell(obs))?;
                 return Ok(());
@@ -201,7 +215,7 @@ where
         }
     }
 
-    fn ask_promotable(&mut self) -> Option<Obs<Budgeted<P>>> {
+    fn ask_promotable(&mut self) -> Option<MfObs<P>> {
         let next_budget = if let Some(next_budget) = self.next_budget {
             next_budget
         } else {
@@ -222,31 +236,28 @@ where
         }
 
         if let Some(id) = found {
-            let (mut param, value) = if let Config::Pending { obs } =
+            let (mut obs, value) = if let Config::Pending { obs } =
                 self.obss.remove(&id).unwrap_or_else(|| unreachable!())
             {
-                (obs.param, obs.value)
+                obs.take_value()
             } else {
                 unreachable!()
             };
+
             self.obss.insert(id, Config::Finished { value });
 
-            param.budget_mut().amount = next_budget;
-            Some(Obs {
-                id,
-                param,
-                value: (),
-            })
+            obs.budget.amount = next_budget;
+            Some(obs)
         } else {
             None
         }
     }
 
-    fn tell(&mut self, obs: Obs<Budgeted<P>, V>) -> Result<()> {
+    fn tell(&mut self, obs: MfObs<P, V>) -> Result<()> {
         track_assert!(!self.obss.contains_key(&obs.id), ErrorKind::Bug);
         track_assert!(
-            self.curr_budget <= obs.param.budget().consumption,
-            ErrorKind::InvalidInput; self.curr_budget, obs.param.budget()
+            self.curr_budget <= obs.budget.consumption,
+            ErrorKind::InvalidInput; self.curr_budget, obs.budget
         );
         self.obss.insert(obs.id, Config::Pending { obs });
         Ok(())
@@ -255,7 +266,7 @@ where
 
 #[derive(Debug)]
 enum Config<P, V> {
-    Pending { obs: Obs<Budgeted<P>, V> },
+    Pending { obs: MfObs<P, V> },
     Finished { value: V },
 }
 impl<P, V> Config<P, V> {
@@ -267,48 +278,47 @@ impl<P, V> Config<P, V> {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::observation::SerialIdGenerator;
-//     use crate::optimizers::random::RandomOptimizer;
-//     use crate::parameters::F64;
-//     use crate::Optimizer;
-//     use rand;
-//     use trackable::result::TestResult;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domains::ContinuousDomain;
+    use crate::generators::SerialIdGenerator;
+    use crate::optimizers::random::RandomOptimizer;
+    use rand;
+    use trackable::result::TestResult;
 
-//     #[test]
-//     fn asha_works() -> TestResult {
-//         let inner = RandomOptimizer::new(track!(F64::new(0.0, 1.0))?);
-//         let mut optimizer = track!(AshaOptimizer::<_, usize>::new(inner, 10, 20))?;
+    #[test]
+    fn asha_works() -> TestResult {
+        let inner = RandomOptimizer::new(track!(ContinuousDomain::new(0.0, 1.0))?);
+        let mut optimizer = track!(AshaOptimizer::<usize, _>::new(inner, 10, 20))?;
 
-//         let mut rng = rand::thread_rng();
-//         let mut idg = SerialIdGenerator::new();
+        let mut rng = rand::thread_rng();
+        let mut idg = SerialIdGenerator::new();
 
-//         // first
-//         let obs = track!(optimizer.ask(&mut rng, &mut idg))?;
-//         assert_eq!(obs.id.get(), 0);
+        // first
+        let obs = track!(optimizer.ask(&mut rng, &mut idg))?;
+        assert_eq!(obs.id.get(), 0);
 
-//         let mut obs = obs.map_value(|_| 1);
-//         track!(obs.param.budget_mut().consume(10))?;
-//         track!(optimizer.tell(obs))?;
+        let mut obs = obs.map_value(|_| 1);
+        obs.budget.consumption += 10;
+        track!(optimizer.tell(obs))?;
 
-//         // second
-//         let obs = track!(optimizer.ask(&mut rng, &mut idg))?;
-//         assert_eq!(obs.id.get(), 1);
+        // second
+        let obs = track!(optimizer.ask(&mut rng, &mut idg))?;
+        assert_eq!(obs.id.get(), 1);
 
-//         let mut obs = obs.map_value(|_| 2);
-//         track!(obs.param.budget_mut().consume(10))?;
-//         track!(optimizer.tell(obs))?;
+        let mut obs = obs.map_value(|_| 2);
+        obs.budget.consumption += 10;
+        track!(optimizer.tell(obs))?;
 
-//         // third
-//         let obs = track!(optimizer.ask(&mut rng, &mut idg))?;
-//         assert_eq!(obs.id.get(), 0);
+        // third
+        let obs = track!(optimizer.ask(&mut rng, &mut idg))?;
+        assert_eq!(obs.id.get(), 0);
 
-//         let mut obs = obs.map_value(|_| 1);
-//         track!(obs.param.budget_mut().consume(10))?;
-//         track!(optimizer.tell(obs))?;
+        let mut obs = obs.map_value(|_| 1);
+        obs.budget.consumption += 10;
+        track!(optimizer.tell(obs))?;
 
-//         Ok(())
-//     }
-// }
+        Ok(())
+    }
+}
