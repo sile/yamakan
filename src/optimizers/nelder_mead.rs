@@ -12,6 +12,7 @@ use crate::{ErrorKind, IdGen, Obs, ObsId, Optimizer, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
 use std;
+use std::f64::EPSILON;
 
 /// An optimizer based on [Adaptive Nelder-Mead Simplex (ANMS)][ANMS] algorithm.
 ///
@@ -101,10 +102,10 @@ where
                 let v = p.low().max(v);
                 let mut v = (p.high() - std::f64::EPSILON).min(v);
                 for i in 2.. {
-                    if v != p.high() {
+                    if (v - p.high()).abs() > EPSILON {
                         break;
                     }
-                    v -= std::f64::EPSILON * i as f64;
+                    v -= EPSILON * f64::from(i);
                 }
                 v
             })
@@ -245,8 +246,8 @@ where
         let n = self.dim();
         let mut c = vec![f64::default(); n];
         for t in self.simplex.iter().take(n) {
-            for i in 0..n {
-                c[i] += t.param[i];
+            for (i, c) in c.iter_mut().enumerate() {
+                *c += t.param[i];
             }
         }
 
