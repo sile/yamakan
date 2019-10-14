@@ -9,7 +9,7 @@ repository = "https://github.com/sile/yamakan"
 readme = "README.md"
 keywords = ["blackbox-optimizer"]
 categories = ["science"]
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 [badges]
 travis-ci = {repository = "sile/yamakan"}
