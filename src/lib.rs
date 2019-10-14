@@ -15,7 +15,6 @@ pub mod budget;
 pub mod domains;
 pub mod observation;
 pub mod optimizers;
-// pub mod parameters; // TODO: delete
 
 mod error;
 
