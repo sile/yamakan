@@ -1,5 +1,5 @@
 //! Observation and its identifier.
-use crate::Result;
+use crate::{IdGen, Result};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std;
@@ -91,59 +91,5 @@ impl ObsId {
     /// Returns the value of this identifier.
     pub const fn get(self) -> u64 {
         self.0
-    }
-}
-
-/// Observation ID generator.
-pub trait IdGen {
-    /// Generates a new identifier.
-    fn generate(&mut self) -> Result<ObsId>;
-}
-impl<'a, T: IdGen + ?Sized> IdGen for &'a mut T {
-    fn generate(&mut self) -> Result<ObsId> {
-        (**self).generate()
-    }
-}
-impl<T: IdGen + ?Sized> IdGen for Box<T> {
-    fn generate(&mut self) -> Result<ObsId> {
-        (**self).generate()
-    }
-}
-
-/// An implementation of `IdGen` that generates serial identifiers starting from zero.
-#[derive(Debug, Default)]
-pub struct SerialIdGenerator {
-    next_id: u64,
-}
-impl SerialIdGenerator {
-    /// Makes a new `SerialIdGenerator` instance.
-    pub const fn new() -> Self {
-        Self { next_id: 0 }
-    }
-}
-impl IdGen for SerialIdGenerator {
-    fn generate(&mut self) -> Result<ObsId> {
-        let id = self.next_id;
-        self.next_id += 1;
-        Ok(ObsId::new(id))
-    }
-}
-
-/// An implementation of `IdGen` that always returns the same identifier.
-#[derive(Debug)]
-pub struct ConstIdGenerator {
-    id: ObsId,
-}
-impl ConstIdGenerator {
-    /// Makes a new `ConstIdGenerator` instance.
-    ///
-    /// When `ConstIdGenerator::generate` method is called, it always returns the given identifier.
-    pub const fn new(id: ObsId) -> Self {
-        Self { id }
-    }
-}
-impl IdGen for ConstIdGenerator {
-    fn generate(&mut self) -> Result<ObsId> {
-        Ok(self.id)
     }
 }

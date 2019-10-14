@@ -1,6 +1,5 @@
 //! Random optimizer.
-use crate::observation::{IdGen, Obs};
-use crate::{Domain, Optimizer, Result};
+use crate::{Domain, IdGen, Obs, Optimizer, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
 use std::marker::PhantomData;
@@ -53,7 +52,7 @@ where
 mod tests {
     use super::*;
     use crate::domains::DiscreteDomain;
-    use crate::observation::SerialIdGenerator;
+    use crate::generators::SerialIdGenerator;
     use rand;
     use trackable::result::TestResult;
 

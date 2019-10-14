@@ -8,8 +8,7 @@
 //!
 //! [ANMS]: https://link.springer.com/article/10.1007/s10589-010-9329-3
 use crate::domains::ContinuousDomain;
-use crate::observation::{IdGen, Obs, ObsId};
-use crate::{ErrorKind, Optimizer, Result};
+use crate::{ErrorKind, IdGen, Obs, ObsId, Optimizer, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
 use std;
@@ -339,7 +338,7 @@ enum State<V> {
 mod tests {
     use super::*;
     use crate::domains::ContinuousDomain;
-    use crate::observation::SerialIdGenerator;
+    use crate::generators::SerialIdGenerator;
     use ordered_float::NotNan;
     use rand;
     use trackable::result::TopLevelResult;

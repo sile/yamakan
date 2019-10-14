@@ -4,8 +4,7 @@
 //!
 //! - [Massively Parallel Hyperparameter Tuning](https://arxiv.org/abs/1810.05934)
 use crate::budget::{Budget, Budgeted};
-use crate::observation::{IdGen, Obs, ObsId};
-use crate::{ErrorKind, Optimizer, Result};
+use crate::{ErrorKind, IdGen, Obs, ObsId, Optimizer, Result};
 use rand::Rng;
 use std::cmp;
 use std::collections::HashMap;
