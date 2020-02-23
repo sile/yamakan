@@ -5,7 +5,6 @@
 //! - [A fast and elitist multiobjective genetic algorithm: NSGA-II][NSGA-II]
 //!
 //! [NSGA-II]: https://ieeexplore.ieee.org/document/996017
-#![allow(missing_docs)] // TODO
 use crate::domains::VecDomain;
 use crate::{Domain, ErrorKind, IdGen, Obs, Optimizer, Result};
 use ordered_float::OrderedFloat;
@@ -16,11 +15,14 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::f64::INFINITY;
 use std::marker::PhantomData;
 
+/// This trait allows generating new individuals.
 pub trait Generate<D: Domain> {
+    /// Generates a new individual.
     fn generate<R: Rng>(&mut self, rng: R, domain: &D) -> Result<D::Point>;
 }
 
-#[derive(Debug)]
+/// Random generator.
+#[derive(Debug, Default)]
 pub struct RandomGenerator;
 
 impl<D> Generate<D> for RandomGenerator
@@ -32,7 +34,9 @@ where
     }
 }
 
+/// This trait allows selecting parents from a population.
 pub trait Select<D: Domain> {
+    /// Selects parents.
     fn select_parents<'a, R: Rng>(
         &mut self,
         mut rng: R,
@@ -43,6 +47,7 @@ pub trait Select<D: Domain> {
         Ok((p0, p1))
     }
 
+    /// Select a parent.
     fn select<'a, R: Rng>(
         &mut self,
         rng: R,
@@ -50,20 +55,27 @@ pub trait Select<D: Domain> {
     ) -> Result<&'a Obs<D::Point, Vec<f64>>>;
 }
 
+/// Tournament selector.
 #[derive(Debug)]
 pub struct TournamentSelector {
     tournament_size: usize,
 }
 
 impl TournamentSelector {
-    pub fn new(tournament_size: usize) -> Self {
-        Self { tournament_size }
+    /// Makes a new `TournamentSelector` instance.
+    ///
+    /// # Error
+    ///
+    /// If `tournament_size` is less than `2`, this returns an `ErrorKind::InvalidInput` error.
+    pub fn new(tournament_size: usize) -> Result<Self> {
+        track_assert!(tournament_size > 1, ErrorKind::InvalidInput; tournament_size);
+        Ok(Self { tournament_size })
     }
 }
 
 impl Default for TournamentSelector {
     fn default() -> Self {
-        Self::new(2)
+        Self { tournament_size: 2 }
     }
 }
 
@@ -85,7 +97,9 @@ impl<D: Domain> Select<D> for TournamentSelector {
     }
 }
 
+/// This trait allows applying crossover operator.
 pub trait CrossOver<D: Domain> {
+    /// Applies crossover operator.
     fn cross_over<R: Rng>(
         &mut self,
         rng: R,
@@ -94,16 +108,20 @@ pub trait CrossOver<D: Domain> {
     ) -> Result<(D::Point, D::Point)>;
 }
 
+/// This trait allows applying mutation operator.
 pub trait Mutate<D: Domain> {
+    /// Mutates an individual.
     fn mutate<R: Rng>(&mut self, rng: R, domain: &D, p: D::Point) -> Result<D::Point>;
 }
 
+/// A crossover operator that stochastically exchanges two individuals.
 #[derive(Debug)]
 pub struct Exchange {
     probability: f64,
 }
 
 impl Exchange {
+    /// Makes a new `Exchange` instance.
     pub fn new(probability: f64) -> Result<Self> {
         track_assert!(0.0 <= probability && probability <= 1.0, ErrorKind::InvalidInput; probability);
         Ok(Self { probability })
@@ -131,10 +149,12 @@ impl<D: Domain> CrossOver<D> for Exchange {
     }
 }
 
+/// Vector version of `Exchange` operator.
 #[derive(Debug, Default)]
 pub struct ExchangeVec(Exchange);
 
 impl ExchangeVec {
+    /// Makes a new `ExchangeVec` instance.
     pub fn new(probability: f64) -> Result<Self> {
         track!(Exchange::new(probability)).map(Self)
     }
@@ -164,12 +184,14 @@ where
     }
 }
 
+/// A mutation operator that stochastically replaces a individual with a randomly sampled value.
 #[derive(Debug)]
 pub struct Replace {
     probability: f64,
 }
 
 impl Replace {
+    /// Makes a new `Replace` instance.
     pub fn new(probability: f64) -> Result<Self> {
         track_assert!(0.0 <= probability && probability <= 1.0, ErrorKind::InvalidInput; probability);
         Ok(Self { probability })
@@ -195,10 +217,12 @@ where
     }
 }
 
+/// Vector version of `Replace` operator.
 #[derive(Debug, Default)]
 pub struct ReplaceVec(Replace);
 
 impl ReplaceVec {
+    /// Makes a new `ReplaceVec` instance.
     pub fn new(probability: f64) -> Result<Self> {
         track!(Replace::new(probability)).map(Self)
     }
@@ -233,25 +257,46 @@ fn dominates<P>(a: &Obs<P, Vec<f64>>, b: &Obs<P, Vec<f64>>) -> Result<bool> {
     }
 }
 
+/// This trait allows providing operators used by the NSGA-II algorithm.
 pub trait Strategy<D: Domain> {
+    /// Generator.
     type Generator: Generate<D>;
+
+    /// Selector.
     type Selector: Select<D>;
+
+    /// Crossover.
     type CrossOver: CrossOver<D>;
+
+    /// Mutator.
     type Mutator: Mutate<D>;
 
+    /// Returns a reference to the generator.
     fn generator(&self) -> &Self::Generator;
+
+    /// Returns a mutable reference to the generator.
     fn generator_mut(&mut self) -> &mut Self::Generator;
 
+    /// Returns a reference to the selector.
     fn selector(&self) -> &Self::Selector;
+
+    /// Returns a mutable reference to the selector.
     fn selector_mut(&mut self) -> &mut Self::Selector;
 
+    /// Returns a reference to the crossover operator.
     fn cross_over(&self) -> &Self::CrossOver;
+
+    /// Returns a mutable reference to the crossover operator.
     fn cross_over_mut(&mut self) -> &mut Self::CrossOver;
 
+    /// Returns a reference to the mutator.
     fn mutator(&self) -> &Self::Mutator;
+
+    /// Returns a mutable reference to the mutator.
     fn mutator_mut(&mut self) -> &mut Self::Mutator;
 }
 
+/// NSGA-II strategy.
 #[derive(Debug)]
 pub struct Nsga2Strategy<D, G, S, C, M> {
     generator: G,
@@ -283,6 +328,7 @@ where
     C: CrossOver<D>,
     M: Mutate<D>,
 {
+    /// Makes a new `Nsga2Strategy` instance.
     pub fn new(generator: G, selector: S, cross_over: C, mutator: M) -> Self {
         Self {
             generator,
@@ -362,6 +408,7 @@ where
     P::Point: Clone,
     S: Strategy<P>,
 {
+    /// Makes a new `Nsga2Optimizer` instance.
     pub fn new(param_domain: P, population_size: usize, strategy: S) -> Result<Self> {
         track_assert!(population_size >= 2, ErrorKind::InvalidInput; population_size);
         Ok(Self {
