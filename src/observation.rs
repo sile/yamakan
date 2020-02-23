@@ -2,7 +2,6 @@
 use crate::{Budget, IdGen, Result};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std;
 
 /// Observation Identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

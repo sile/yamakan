@@ -11,7 +11,6 @@ use crate::domains::ContinuousDomain;
 use crate::{ErrorKind, IdGen, Obs, ObsId, Optimizer, Result};
 use rand::distributions::Distribution;
 use rand::Rng;
-use std;
 use std::f64::EPSILON;
 
 /// An optimizer based on [Adaptive Nelder-Mead Simplex (ANMS)][ANMS] algorithm.

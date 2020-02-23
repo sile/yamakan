@@ -1,7 +1,6 @@
 //! Budget for evaluating parameters.
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std;
 
 /// Budget.
 #[derive(Debug, Clone, Copy)]
