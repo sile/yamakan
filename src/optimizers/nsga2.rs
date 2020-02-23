@@ -36,11 +36,10 @@ pub trait Select<D: Domain> {
         &mut self,
         mut rng: R,
         population: &'a [Obs<D::Point, Vec<f64>>],
-        parent_count: usize,
-    ) -> Result<Vec<&'a Obs<D::Point, Vec<f64>>>> {
-        (0..parent_count)
-            .map(|_| track!(self.select(&mut rng, population)))
-            .collect()
+    ) -> Result<(&'a Obs<D::Point, Vec<f64>>, &'a Obs<D::Point, Vec<f64>>)> {
+        let p0 = track!(self.select(&mut rng, population))?;
+        let p1 = track!(self.select(&mut rng, population))?;
+        Ok((p0, p1))
     }
 
     fn select<'a, R: Rng>(
@@ -85,12 +84,81 @@ impl<D: Domain> Select<D> for TournamentSelector {
     }
 }
 
-pub trait Variator<D: Domain> {
-    fn evolve<R: Rng>(
+pub trait CrossOver<D: Domain> {
+    fn cross_over<R: Rng>(
         &mut self,
         rng: R,
-        parents: &[&Obs<D::Point, Vec<f64>>],
-    ) -> Result<Vec<D::Point>>;
+        p0: D::Point,
+        p1: D::Point,
+    ) -> Result<(D::Point, D::Point)>;
+}
+
+pub trait Mutate<D: Domain> {
+    fn mutate<R: Rng>(&mut self, rng: R, domain: &D, p: D::Point) -> Result<D::Point>;
+}
+
+#[derive(Debug)]
+pub struct Exchange {
+    probability: f64,
+}
+
+impl Exchange {
+    pub fn new(probability: f64) -> Result<Self> {
+        track_assert!(0.0 <= probability && probability <= 1.0, ErrorKind::InvalidInput; probability);
+        Ok(Self { probability })
+    }
+}
+
+impl Default for Exchange {
+    fn default() -> Self {
+        Self { probability: 0.5 }
+    }
+}
+
+impl<D: Domain> CrossOver<D> for Exchange {
+    fn cross_over<R: Rng>(
+        &mut self,
+        mut rng: R,
+        p0: D::Point,
+        p1: D::Point,
+    ) -> Result<(D::Point, D::Point)> {
+        if rng.gen_bool(self.probability) {
+            Ok((p1, p0))
+        } else {
+            Ok((p0, p1))
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Replace {
+    probability: f64,
+}
+
+impl Replace {
+    pub fn new(probability: f64) -> Result<Self> {
+        track_assert!(0.0 <= probability && probability <= 1.0, ErrorKind::InvalidInput; probability);
+        Ok(Self { probability })
+    }
+}
+
+impl Default for Replace {
+    fn default() -> Self {
+        Self { probability: 0.3 }
+    }
+}
+
+impl<D> Mutate<D> for Replace
+where
+    D: Domain + Distribution<<D as Domain>::Point>,
+{
+    fn mutate<R: Rng>(&mut self, mut rng: R, domain: &D, p: D::Point) -> Result<D::Point> {
+        if rng.gen_bool(self.probability) {
+            Ok(domain.sample(&mut rng))
+        } else {
+            Ok(p)
+        }
+    }
 }
 
 fn dominates<P>(a: &Obs<P, Vec<f64>>, b: &Obs<P, Vec<f64>>) -> Result<bool> {
@@ -102,13 +170,11 @@ fn dominates<P>(a: &Obs<P, Vec<f64>>, b: &Obs<P, Vec<f64>>) -> Result<bool> {
     }
 }
 
-// TODO: remove
-// SSX: Subsequence exchange crossover.
-
 pub trait Strategy<D: Domain> {
     type Generator: Generate<D>;
     type Selector: Select<D>;
-    type Variator: Variator<D>;
+    type CrossOver: CrossOver<D>;
+    type Mutator: Mutate<D>;
 
     fn generator(&self) -> &Self::Generator;
     fn generator_mut(&mut self) -> &mut Self::Generator;
@@ -116,45 +182,67 @@ pub trait Strategy<D: Domain> {
     fn selector(&self) -> &Self::Selector;
     fn selector_mut(&mut self) -> &mut Self::Selector;
 
-    fn variator(&self) -> &Self::Variator;
-    fn variator_mut(&mut self) -> &mut Self::Variator;
+    fn cross_over(&self) -> &Self::CrossOver;
+    fn cross_over_mut(&mut self) -> &mut Self::CrossOver;
+
+    fn mutator(&self) -> &Self::Mutator;
+    fn mutator_mut(&mut self) -> &mut Self::Mutator;
 }
 
 #[derive(Debug)]
-pub struct Nsga2Strategy<D, G, S, V> {
+pub struct Nsga2Strategy<D, G, S, C, M> {
     generator: G,
     selector: S,
-    variator: V,
+    cross_over: C,
+    mutator: M,
     _param_domain: PhantomData<D>,
 }
 
-impl<D, G, S, V> Nsga2Strategy<D, G, S, V>
+impl<D> Default for Nsga2Strategy<D, RandomGenerator, TournamentSelector, Exchange, Replace>
+where
+    D: Domain + Distribution<<D as Domain>::Point>,
+{
+    fn default() -> Self {
+        Self::new(
+            RandomGenerator,
+            TournamentSelector::default(),
+            Exchange::default(),
+            Replace::default(),
+        )
+    }
+}
+
+impl<D, G, S, C, M> Nsga2Strategy<D, G, S, C, M>
 where
     D: Domain,
     G: Generate<D>,
     S: Select<D>,
-    V: Variator<D>,
+    C: CrossOver<D>,
+    M: Mutate<D>,
 {
-    pub fn new(generator: G, selector: S, variator: V) -> Self {
+    pub fn new(generator: G, selector: S, cross_over: C, mutator: M) -> Self {
         Self {
             generator,
             selector,
-            variator,
+            cross_over,
+            mutator,
             _param_domain: PhantomData,
         }
     }
 }
 
-impl<D, G, S, V> Strategy<D> for Nsga2Strategy<D, G, S, V>
+impl<D, G, S, C, M> Strategy<D> for Nsga2Strategy<D, G, S, C, M>
 where
     D: Domain,
     G: Generate<D>,
     S: Select<D>,
-    V: Variator<D>,
+    C: CrossOver<D>,
+    M: Mutate<D>,
 {
     type Generator = G;
     type Selector = S;
-    type Variator = V;
+    type CrossOver = C;
+    type Mutator = M;
 
     fn generator(&self) -> &Self::Generator {
         &self.generator
@@ -172,12 +260,20 @@ where
         &mut self.selector
     }
 
-    fn variator(&self) -> &Self::Variator {
-        &self.variator
+    fn cross_over(&self) -> &Self::CrossOver {
+        &self.cross_over
     }
 
-    fn variator_mut(&mut self) -> &mut Self::Variator {
-        &mut self.variator
+    fn cross_over_mut(&mut self) -> &mut Self::CrossOver {
+        &mut self.cross_over
+    }
+
+    fn mutator(&self) -> &Self::Mutator {
+        &self.mutator
+    }
+
+    fn mutator_mut(&mut self) -> &mut Self::Mutator {
+        &mut self.mutator
     }
 }
 
@@ -200,6 +296,7 @@ where
 impl<P, S> Nsga2Optimizer<P, S>
 where
     P: Domain,
+    P::Point: Clone,
     S: Strategy<P>,
 {
     pub fn new(param_domain: P, population_size: usize, strategy: S) -> Result<Self> {
@@ -229,15 +326,25 @@ where
         mut rng: impl Rng,
         mut idg: impl IdGen,
     ) -> Result<()> {
-        let parents = track!(self.strategy.selector_mut().select_parents(
+        let (p0, p1) = track!(self
+            .strategy
+            .selector_mut()
+            .select_parents(&mut rng, &self.parent_population))?;
+        let (c0, c1) = track!(self.strategy.cross_over_mut().cross_over(
             &mut rng,
-            &self.parent_population,
-            2
+            p0.param.clone(),
+            p1.param.clone()
         ))?;
-        for params in track!(self.strategy.variator_mut().evolve(&mut rng, &parents))? {
-            self.eval_queue
-                .push_back(track!(Obs::new(&mut idg, params))?);
-        }
+        let c0 = track!(self
+            .strategy
+            .mutator_mut()
+            .mutate(&mut rng, &self.param_domain, c0))?;
+        let c1 = track!(self
+            .strategy
+            .mutator_mut()
+            .mutate(&mut rng, &self.param_domain, c1))?;
+        self.eval_queue.push_back(track!(Obs::new(&mut idg, c0))?);
+        self.eval_queue.push_back(track!(Obs::new(&mut idg, c1))?);
         Ok(())
     }
 
@@ -315,6 +422,7 @@ where
 impl<P, S> Optimizer for Nsga2Optimizer<P, S>
 where
     P: Domain,
+    P::Point: Clone,
     S: Strategy<P>,
 {
     type Param = P::Point;
@@ -359,6 +467,30 @@ where
 
     fn tell(&mut self, obs: Obs<Self::Param, Self::Value>) -> Result<()> {
         self.current_population.push(obs);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domains::DiscreteDomain;
+    use crate::generators::SerialIdGenerator;
+    use rand;
+    use trackable::result::TestResult;
+
+    #[test]
+    fn nsga2_works() -> TestResult {
+        let param_domain = track!(DiscreteDomain::new(10))?;
+        let population_size = 10;
+        let strategy = Nsga2Strategy::default();
+        let mut opt = track!(Nsga2Optimizer::new(param_domain, population_size, strategy))?;
+        let mut rng = rand::thread_rng();
+        let mut idg = SerialIdGenerator::new();
+
+        let obs = track!(opt.ask(&mut rng, &mut idg))?;
+        track!(opt.tell(obs.map_value(|()| vec![1.0])))?;
+
         Ok(())
     }
 }
