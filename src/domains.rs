@@ -5,6 +5,23 @@ use rand::distributions::Distribution;
 use rand::Rng;
 use std::num::NonZeroU64;
 
+/// Vector domain.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct VecDomain<T>(pub Vec<T>);
+
+impl<T: Domain> Domain for VecDomain<T> {
+    type Point = Vec<T::Point>;
+}
+
+impl<T> Distribution<Vec<T::Point>> for VecDomain<T>
+where
+    T: Domain + Distribution<<T as Domain>::Point>,
+{
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Vec<T::Point> {
+        self.0.iter().map(|t| t.sample(rng)).collect()
+    }
+}
+
 /// Categorical domain.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CategoricalDomain {
