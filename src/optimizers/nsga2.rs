@@ -6,6 +6,7 @@
 //!
 //! [NSGA-II]: https://ieeexplore.ieee.org/document/996017
 #![allow(missing_docs)] // TODO
+use crate::domains::VecDomain;
 use crate::{Domain, ErrorKind, IdGen, Obs, Optimizer, Result};
 use ordered_float::OrderedFloat;
 use rand::distributions::Distribution;
@@ -130,6 +131,39 @@ impl<D: Domain> CrossOver<D> for Exchange {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct ExchangeVec(Exchange);
+
+impl ExchangeVec {
+    pub fn new(probability: f64) -> Result<Self> {
+        track!(Exchange::new(probability)).map(Self)
+    }
+}
+
+impl<D: Domain> CrossOver<VecDomain<D>> for ExchangeVec
+where
+    Exchange: CrossOver<D>,
+{
+    fn cross_over<R: Rng>(
+        &mut self,
+        mut rng: R,
+        ps0: Vec<D::Point>,
+        ps1: Vec<D::Point>,
+    ) -> Result<(Vec<D::Point>, Vec<D::Point>)> {
+        track_assert_eq!(ps0.len(), ps1.len(), ErrorKind::InvalidInput);
+        let mut cs0 = Vec::new();
+        let mut cs1 = Vec::new();
+
+        for (p0, p1) in ps0.into_iter().zip(ps1.into_iter()) {
+            let (c0, c1) = track!(self.0.cross_over(&mut rng, p0, p1))?;
+            cs0.push(c0);
+            cs1.push(c1);
+        }
+
+        Ok((cs0, cs1))
+    }
+}
+
 #[derive(Debug)]
 pub struct Replace {
     probability: f64,
@@ -158,6 +192,35 @@ where
         } else {
             Ok(p)
         }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ReplaceVec(Replace);
+
+impl ReplaceVec {
+    pub fn new(probability: f64) -> Result<Self> {
+        track!(Replace::new(probability)).map(Self)
+    }
+}
+
+impl<D> Mutate<VecDomain<D>> for ReplaceVec
+where
+    D: Domain + Distribution<<D as Domain>::Point>,
+    Replace: Mutate<D>,
+{
+    fn mutate<R: Rng>(
+        &mut self,
+        mut rng: R,
+        domain: &VecDomain<D>,
+        ps: Vec<D::Point>,
+    ) -> Result<Vec<D::Point>> {
+        domain
+            .0
+            .iter()
+            .zip(ps.into_iter())
+            .map(|(d, p)| track!(self.0.mutate(&mut rng, d, p)))
+            .collect()
     }
 }
 
