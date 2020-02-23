@@ -23,7 +23,7 @@ mod error;
 mod observation;
 
 /// This crate specific `Result` type.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 /// This trait provides ask-and-tell interface for black-box optimization.
 pub trait Optimizer {
