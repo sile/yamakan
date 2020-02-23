@@ -36,17 +36,6 @@ where
 
 /// This trait allows selecting parents from a population.
 pub trait Select<D: Domain> {
-    /// Selects parents.
-    fn select_parents<'a, R: Rng>(
-        &mut self,
-        mut rng: R,
-        population: &'a [Obs<D::Point, Vec<f64>>],
-    ) -> Result<(&'a Obs<D::Point, Vec<f64>>, &'a Obs<D::Point, Vec<f64>>)> {
-        let p0 = track!(self.select(&mut rng, population))?;
-        let p1 = track!(self.select(&mut rng, population))?;
-        Ok((p0, p1))
-    }
-
     /// Select a parent.
     fn select<'a, R: Rng>(
         &mut self,
@@ -100,18 +89,13 @@ impl<D: Domain> Select<D> for TournamentSelector {
 /// This trait allows applying crossover operator.
 pub trait CrossOver<D: Domain> {
     /// Applies crossover operator.
-    fn cross_over<R: Rng>(
-        &mut self,
-        rng: R,
-        p0: D::Point,
-        p1: D::Point,
-    ) -> Result<(D::Point, D::Point)>;
+    fn cross_over<R: Rng>(&mut self, rng: R, p0: &mut D::Point, p1: &mut D::Point) -> Result<()>;
 }
 
 /// This trait allows applying mutation operator.
 pub trait Mutate<D: Domain> {
     /// Mutates an individual.
-    fn mutate<R: Rng>(&mut self, rng: R, domain: &D, p: D::Point) -> Result<D::Point>;
+    fn mutate<R: Rng>(&mut self, rng: R, domain: &D, p: &mut D::Point) -> Result<()>;
 }
 
 /// A crossover operator that stochastically exchanges two individuals.
@@ -138,14 +122,13 @@ impl<D: Domain> CrossOver<D> for Exchange {
     fn cross_over<R: Rng>(
         &mut self,
         mut rng: R,
-        p0: D::Point,
-        p1: D::Point,
-    ) -> Result<(D::Point, D::Point)> {
+        p0: &mut D::Point,
+        p1: &mut D::Point,
+    ) -> Result<()> {
         if rng.gen_bool(self.probability) {
-            Ok((p1, p0))
-        } else {
-            Ok((p0, p1))
+            std::mem::swap(p0, p1);
         }
+        Ok(())
     }
 }
 
@@ -167,20 +150,14 @@ where
     fn cross_over<R: Rng>(
         &mut self,
         mut rng: R,
-        ps0: Vec<D::Point>,
-        ps1: Vec<D::Point>,
-    ) -> Result<(Vec<D::Point>, Vec<D::Point>)> {
+        ps0: &mut Vec<D::Point>,
+        ps1: &mut Vec<D::Point>,
+    ) -> Result<()> {
         track_assert_eq!(ps0.len(), ps1.len(), ErrorKind::InvalidInput);
-        let mut cs0 = Vec::new();
-        let mut cs1 = Vec::new();
-
-        for (p0, p1) in ps0.into_iter().zip(ps1.into_iter()) {
-            let (c0, c1) = track!(self.0.cross_over(&mut rng, p0, p1))?;
-            cs0.push(c0);
-            cs1.push(c1);
+        for (p0, p1) in ps0.iter_mut().zip(ps1.iter_mut()) {
+            track!(self.0.cross_over(&mut rng, p0, p1))?;
         }
-
-        Ok((cs0, cs1))
+        Ok(())
     }
 }
 
@@ -208,12 +185,11 @@ impl<D> Mutate<D> for Replace
 where
     D: Domain + Distribution<<D as Domain>::Point>,
 {
-    fn mutate<R: Rng>(&mut self, mut rng: R, domain: &D, p: D::Point) -> Result<D::Point> {
+    fn mutate<R: Rng>(&mut self, mut rng: R, domain: &D, p: &mut D::Point) -> Result<()> {
         if rng.gen_bool(self.probability) {
-            Ok(domain.sample(&mut rng))
-        } else {
-            Ok(p)
+            *p = domain.sample(&mut rng);
         }
+        Ok(())
     }
 }
 
@@ -237,14 +213,12 @@ where
         &mut self,
         mut rng: R,
         domain: &VecDomain<D>,
-        ps: Vec<D::Point>,
-    ) -> Result<Vec<D::Point>> {
-        domain
-            .0
-            .iter()
-            .zip(ps.into_iter())
-            .map(|(d, p)| track!(self.0.mutate(&mut rng, d, p)))
-            .collect()
+        ps: &mut Vec<D::Point>,
+    ) -> Result<()> {
+        for (d, p) in domain.0.iter().zip(ps.iter_mut()) {
+            track!(self.0.mutate(&mut rng, d, p))?;
+        }
+        Ok(())
     }
 }
 
@@ -436,28 +410,25 @@ where
         mut rng: impl Rng,
         mut idg: impl IdGen,
     ) -> Result<()> {
-        let (p0, p1) = track!(self
-            .strategy
-            .selector_mut()
-            .select_parents(&mut rng, &self.parent_population))?;
-        let (c0, c1) = track!(self.strategy.cross_over_mut().cross_over(
-            &mut rng,
-            p0.param.clone(),
-            p1.param.clone()
-        ))?;
-        let c0 = track!(self
-            .strategy
-            .mutator_mut()
-            .mutate(&mut rng, &self.param_domain, c0))?;
-        let c1 = track!(self
-            .strategy
-            .mutator_mut()
-            .mutate(&mut rng, &self.param_domain, c1))?;
+        let selector = self.strategy.selector_mut();
+        let p0 = track!(selector.select(&mut rng, &self.parent_population))?;
+        let p1 = track!(selector.select(&mut rng, &self.parent_population))?;
+
+        let cross_over = self.strategy.cross_over_mut();
+        let mut c0 = p0.param.clone();
+        let mut c1 = p1.param.clone();
+        track!(cross_over.cross_over(&mut rng, &mut c0, &mut c1))?;
+
+        let mutator = self.strategy.mutator_mut();
+        track!(mutator.mutate(&mut rng, &self.param_domain, &mut c0))?;
+        track!(mutator.mutate(&mut rng, &self.param_domain, &mut c1))?;
+
         self.eval_queue.push_back(track!(Obs::new(&mut idg, c0))?);
         self.eval_queue.push_back(track!(Obs::new(&mut idg, c1))?);
         Ok(())
     }
 
+    #[allow(clippy::type_complexity)]
     fn fast_non_dominated_sort(
         &self,
         mut population: Vec<Obs<P::Point, Vec<f64>>>,
