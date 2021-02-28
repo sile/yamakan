@@ -16,7 +16,7 @@ travis-ci = {repository = "sile/yamakan"}
 codecov = {repository = "sile/yamakan"}
 
 [dependencies]
-ordered-float = "1"
-rand = "0.7"
+ordered-float = "2"
+rand = "0.8"
 serde = { version = "1", features = ["derive"], optional = true }
 trackable = "0.2"

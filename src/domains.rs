@@ -53,7 +53,7 @@ impl From<NonZeroU64> for CategoricalDomain {
 }
 impl Distribution<u64> for CategoricalDomain {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> u64 {
-        rng.gen_range(0, self.cardinality.get())
+        rng.gen_range(0..self.cardinality.get())
     }
 }
 
@@ -88,7 +88,7 @@ impl From<NonZeroU64> for DiscreteDomain {
 }
 impl Distribution<u64> for DiscreteDomain {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> u64 {
-        rng.gen_range(0, self.size.get())
+        rng.gen_range(0..self.size.get())
     }
 }
 
@@ -144,6 +144,6 @@ impl Domain for ContinuousDomain {
 }
 impl Distribution<f64> for ContinuousDomain {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> f64 {
-        rng.gen_range(self.low(), self.high())
+        rng.gen_range(self.low()..self.high())
     }
 }
