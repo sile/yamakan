@@ -107,7 +107,7 @@ pub struct Exchange {
 impl Exchange {
     /// Makes a new `Exchange` instance.
     pub fn new(probability: f64) -> Result<Self> {
-        track_assert!(0.0 <= probability && probability <= 1.0, ErrorKind::InvalidInput; probability);
+        track_assert!((0.0..=1.0).contains(&probability), ErrorKind::InvalidInput; probability);
         Ok(Self { probability })
     }
 }
@@ -170,7 +170,7 @@ pub struct Replace {
 impl Replace {
     /// Makes a new `Replace` instance.
     pub fn new(probability: f64) -> Result<Self> {
-        track_assert!(0.0 <= probability && probability <= 1.0, ErrorKind::InvalidInput; probability);
+        track_assert!((0.0..=1.0).contains(&probability), ErrorKind::InvalidInput; probability);
         Ok(Self { probability })
     }
 }

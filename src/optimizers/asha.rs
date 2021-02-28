@@ -216,11 +216,7 @@ where
     }
 
     fn ask_promotable(&mut self) -> Option<MfObs<P>> {
-        let next_budget = if let Some(next_budget) = self.next_budget {
-            next_budget
-        } else {
-            return None;
-        };
+        let next_budget = self.next_budget?;
 
         // FIXME: optimize
         let mut configs = self.obss.values().collect::<Vec<_>>();
